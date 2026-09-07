@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-// ▼ Next.js専用のスクリプト読み込みコンポーネントを追加
 import Script from "next/script";
 import "./globals.css";
 
@@ -14,10 +13,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// ▼ タイトルと説明文をカッタツモリ用に変更
 export const metadata: Metadata = {
   title: "カッタツモリ | 妄想通販プラットフォーム",
   description: "日本最大級の妄想通販サイト。ストレス発散にどうぞ！実際にはお金は減りません。",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({
@@ -27,13 +30,15 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="ja" // ▼ en から ja に変更
+      lang="ja"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        {/* ==========================================
-            ▼ Google Tag Manager (Script部分) ▼
-        ========================================== */}
+        {/* ファビコンを強烈にブラウザへ認識させるタグ */}
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="apple-touch-icon" href="/apple-icon.png" />
+
+        {/* Google Tag Manager */}
         <Script id="google-tag-manager" strategy="afterInteractive">
           {`
             (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
@@ -45,9 +50,6 @@ export default function RootLayout({
         </Script>
       </head>
       <body className="min-h-full flex flex-col">
-        {/* ==========================================
-            ▼ Google Tag Manager (noscript部分) ▼
-        ========================================== */}
         <noscript>
           <iframe 
             src="https://www.googletagmanager.com/ns.html?id=GTM-5RJWTNJQ"
