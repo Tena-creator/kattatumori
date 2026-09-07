@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Menu, ArrowLeft } from "lucide-react";
 import { ViewState } from "../types";
 
@@ -10,6 +10,24 @@ type Props = {
 
 export default function Header({ view, setView, setIsMenuOpen }: Props) {
   const isTopLevel = ["SHOP", "MYPAGE", "RESULT"].includes(view);
+  const [isVisible, setIsVisible] = useState(true);
+  const [lastScrollY, setLastScrollY] = useState(0);
+
+  // ▼ スクロール方向を検知してヘッダーを隠す/出す処理
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY > lastScrollY && currentScrollY > 60) {
+        setIsVisible(false); // 下スクロールで隠す
+      } else {
+        setIsVisible(true);  // 上スクロールでひょっこり出す
+      }
+      setLastScrollY(currentScrollY);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [lastScrollY]);
 
   const handleBack = () => {
     if (["DETAIL", "HOWTO", "PRIVACY", "TERMS", "CONTACT"].includes(view)) setView("SHOP");
@@ -20,7 +38,9 @@ export default function Header({ view, setView, setIsMenuOpen }: Props) {
   };
 
   return (
-    <header className="sticky top-0 bg-white/95 backdrop-blur border-b border-gray-200 p-3.5 z-50 flex items-center justify-between shadow-sm">
+    <header 
+      className={`sticky top-0 bg-white/95 backdrop-blur border-b border-gray-200 p-3.5 z-50 flex items-center justify-between shadow-sm transition-transform duration-300 ${isVisible ? 'translate-y-0' : '-translate-y-full'}`}
+    >
       <div className="w-12 flex justify-start">
         {isTopLevel ? (
           <button onClick={() => setIsMenuOpen(true)} className="text-gray-500 hover:text-gray-900 transition p-1 lg:hidden">
@@ -33,13 +53,13 @@ export default function Header({ view, setView, setIsMenuOpen }: Props) {
         ) : null}
       </div>
       
-      {/* ロゴ画像サイズを h-6 -> h-9 (36px) へ拡大し、見栄えを強化 */}
+      {/* ▼ ロゴをさらに拡大 (h-9 -> h-12) */}
       <div className="flex-1 flex justify-center items-center py-1">
         {isTopLevel ? (
           <img 
             src="/logo.png" 
             alt="カッタツモリ" 
-            className="h-9 max-w-[200px] object-contain" 
+            className="h-12 max-w-[220px] object-contain" 
             onError={(e) => { 
               e.currentTarget.style.display = 'none'; 
               const next = e.currentTarget.nextElementSibling;
