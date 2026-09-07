@@ -186,7 +186,6 @@ export default function KattaTsumoriApp() {
     setSearchInput(""); 
     setCurrentPage(1);
     setIsBottomCategoryOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
     fetchRakutenItems(keyword, 1, true, sortOrder, maxPrice);
   };
 
