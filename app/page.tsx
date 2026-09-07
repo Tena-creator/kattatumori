@@ -1,69 +1,691 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import React, { useState, useEffect } from "react";
+import { 
+  ShoppingBag, ShieldCheck, Loader2, Star, Store, Search, Home, 
+  User, Clock, Menu, X, Heart, Bell, Settings, Ticket, Trophy, Globe, ArrowDownUp,
+  ShoppingCart, Package, AlertTriangle, Tv, Shirt, Sparkles, Utensils, Car, Smartphone, Grid,
+  HelpCircle, Mail, FileText, ChevronDown, ChevronUp
+} from "lucide-react";
+
+// ▼ 分割した設定ファイル・型定義をインポート
+import { Item, Order, ViewState } from "./types";
+import { APP_CONFIG } from "./config/app";
+import { AD_BANNERS } from "./config/ads";
+import { PAGE_CONTENT } from "./config/pages";
+import { ALL_CATEGORIES } from "./config/categories";
+
+// ▼ 分割したコンポーネントをインポート
+import Header from "./components/Header";
+import BottomNav from "./components/BottomNav";
+import ProductCard from "./components/ProductCard";
+
+export default function KattaTsumoriApp() {
+  const [view, setView] = useState<ViewState>("SHOP");
+  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+  const [cart, setCart] = useState<Item[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+  const [trendingItems, setTrendingItems] = useState<Item[]>([]);
+  const [orderHistory, setOrderHistory] = useState<Order[]>([]);
+  
+  const [lifetimeAmount, setLifetimeAmount] = useState(0);
+  const [lifetimeOrders, setLifetimeOrders] = useState(0);
+  const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
+  
+  const [searchInput, setSearchInput] = useState("");
+  const [currentKeyword, setCurrentKeyword] = useState(APP_CONFIG.defaultSearchKeyword);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isLoadingMain, setIsLoadingMain] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  
+  const [sortOrder, setSortOrder] = useState("standard");
+  const [maxPrice, setMaxPrice] = useState(0);
+  const [sliderValue, setSliderValue] = useState(30000);
+
+  const [isCategoryExpanded, setIsCategoryExpanded] = useState(false);
+  const [isBottomCategoryOpen, setIsBottomCategoryOpen] = useState(false);
+
+  const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
+  const [phone, setPhone] = useState("");
+  const [payMethod, setPayMethod] = useState("credit");
+  const [cardNum, setCardNum] = useState("");
+  const [cvv, setCvv] = useState("");
+
+  const [addressError, setAddressError] = useState("");
+  const [paymentError, setPaymentError] = useState("");
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [currentBanner, setCurrentBanner] = useState(0);
+
+  // ローカルストレージから履歴を復元
+  useEffect(() => {
+    const savedHistory = localStorage.getItem("kattatsumori_orderHistory");
+    const savedLifetimeAmt = localStorage.getItem("kattatsumori_lifetimeAmt");
+    const savedLifetimeOrd = localStorage.getItem("kattatsumori_lifetimeOrd");
+    
+    if (savedHistory) try { setOrderHistory(JSON.parse(savedHistory)); } catch (e) {}
+    if (savedLifetimeAmt) setLifetimeAmount(Number(savedLifetimeAmt));
+    if (savedLifetimeOrd) setLifetimeOrders(Number(savedLifetimeOrd));
+    setIsHistoryLoaded(true);
+  }, []);
+
+  const currentGlobalSales = APP_CONFIG.globalBaseSales + lifetimeAmount;
+
+  const getRank = (amount: number) => {
+    if (amount >= 10000000) return { title: "妄想の創造神", color: "text-yellow-600" };
+    if (amount >= 1000000) return { title: "妄想石油王", color: "text-purple-500" };
+    if (amount >= 500000) return { title: "妄想セレブ", color: "text-red-500" };
+    if (amount >= 100000) return { title: "妄想の達人", color: "text-emerald-500" };
+    if (amount > 0) return { title: "妄想ビギナー", color: "text-blue-500" };
+    return { title: "未体験", color: "text-gray-400" };
+  };
+  const currentRank = getRank(lifetimeAmount);
+
+  // 広告バナーの自動ローテーション
+  useEffect(() => {
+    if (view !== "SHOP") return;
+    const timer = setInterval(() => {
+      setCurrentBanner((prev) => (prev + 1) % AD_BANNERS.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [view]);
+
+  // ▼ さっき買われた商品（トレンド）の取得
+  useEffect(() => {
+    const fetchTrending = async () => {
+      try {
+        const res = await fetch(`/api/rakuten?keyword=${encodeURIComponent("高級時計")}&page=1&affiliateId=${APP_CONFIG.affiliate.rakutenId}`);
+        const data = await res.json();
+        const rawItems = data.Items || data.items;
+        if (rawItems && Array.isArray(rawItems)) {
+          const mapped = rawItems.slice(0, 10).map((itemData: any) => {
+            const item = itemData.Item || itemData;
+            return {
+              id: item.itemCode || String(Math.random()),
+              name: item.itemName || "商品名不明",
+              price: item.itemPrice || 0,
+              image: item.mediumImageUrls?.[0]?.imageUrl?.replace("?_ex=128x128", "") || "",
+              rating: item.reviewAverage || 0,
+              reviews: item.reviewCount || 0,
+              delivery: item.asurakuFlag ? "翌日配達可能" : "通常配送",
+              shopName: item.shopName || "",
+              description: item.itemCaption || "",
+              url: item.itemUrl || "#"
+            };
+          });
+          setTrendingItems(mapped);
+        }
+      } catch (e) {}
+    };
+    fetchTrending();
+  }, []);
+
+  // ▼ メイン商品の取得
+  const fetchRakutenItems = async (keyword: string, page: number, reset: boolean, sort: string, limitPrice: number) => {
+    if (reset) setIsLoadingMain(true);
+    else setIsLoadingMore(true);
+
+    try {
+      let url = `/api/rakuten?keyword=${encodeURIComponent(keyword)}&page=${page}&sort=${encodeURIComponent(sort)}&affiliateId=${APP_CONFIG.affiliate.rakutenId}`;
+      if (limitPrice > 0) url += `&maxPrice=${limitPrice}`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+      const rawItems = data.Items || data.items;
+      
+      if (rawItems && Array.isArray(rawItems)) {
+        const fetchedItems = rawItems.map((itemData: any) => {
+          const item = itemData.Item || itemData;
+          const imageUrl = item.mediumImageUrls?.[0]?.imageUrl?.replace("?_ex=128x128", "") || "https://placehold.co/600x600/f3f4f6/a1a1aa?text=No+Image";
+          return {
+            id: item.itemCode || String(Math.random()),
+            name: item.itemName || "商品名不明",
+            price: item.itemPrice || 0,
+            image: imageUrl,
+            rating: item.reviewAverage || 0,
+            reviews: item.reviewCount || 0,
+            delivery: item.asurakuFlag ? "翌日配達可能" : "通常配送",
+            shopName: item.shopName || "ショップ名不明",
+            description: item.itemCaption || "説明なし",
+            url: item.itemUrl || "#"
+          };
+        });
+        if (reset) setItems(fetchedItems);
+        else setItems((prev) => [...prev, ...fetchedItems]);
+      } else if (reset) {
+        setItems([]);
+      }
+    } catch (error) {} 
+    finally {
+      setIsLoadingMain(false);
+      setIsLoadingMore(false);
+    }
+  };
+
+  useEffect(() => { fetchRakutenItems(currentKeyword, 1, true, sortOrder, maxPrice); }, []);
+
+  // 無限スクロール
+  useEffect(() => {
+    const handleScroll = () => {
+      if (view !== "SHOP") return;
+      if (window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - 300) {
+        if (!isLoadingMain && !isLoadingMore && items.length > 0) {
+          const nextPage = currentPage + 1;
+          setCurrentPage(nextPage);
+          fetchRakutenItems(currentKeyword, nextPage, false, sortOrder, maxPrice);
+        }
+      }
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [isLoadingMain, isLoadingMore, currentPage, currentKeyword, items.length, view, sortOrder, maxPrice]);
+
+  const handleQuickCategory = (keyword: string) => {
+    setCurrentKeyword(keyword);
+    setSearchInput(""); 
+    setCurrentPage(1);
+    setIsBottomCategoryOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    fetchRakutenItems(keyword, 1, true, sortOrder, maxPrice);
+  };
+
+  const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && searchInput.trim() !== "") {
+      setCurrentKeyword(searchInput);
+      setCurrentPage(1);
+      fetchRakutenItems(searchInput, 1, true, sortOrder, maxPrice);
+    }
+  };
+
+  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newSort = e.target.value;
+    setSortOrder(newSort);
+    setCurrentPage(1);
+    fetchRakutenItems(currentKeyword, 1, true, newSort, maxPrice);
+  };
+
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => setSliderValue(Number(e.target.value));
+
+  const handleSliderRelease = () => {
+    const newMaxPrice = sliderValue >= 30000 ? 0 : sliderValue;
+    if (maxPrice !== newMaxPrice) {
+      setMaxPrice(newMaxPrice);
+      setCurrentPage(1);
+      fetchRakutenItems(currentKeyword, 1, true, sortOrder, newMaxPrice);
+    }
+  };
+
+  const addToCart = (item: Item) => { setCart([...cart, item]); setView("SHOP"); };
+
+  const handleAddressSubmit = () => {
+    if (name.trim().length < 2 || address.trim().length < 2) return setAddressError("※氏名と住所は2文字以上で入力してください。");
+    if (!phone.trim()) return setAddressError("※電話番号を入力してください。");
+    setAddressError(""); setView("PAYMENT");
+  };
+
+  const handlePaymentSubmit = () => {
+    if (payMethod === 'credit') {
+      const numLength = cardNum.replace(/\D/g, '').length;
+      if (numLength < 14) return setPaymentError("※クレジットカード番号の桁数が不足しています（14〜16桁必要です）。");
+      if (cvv.trim().length < 3) return setPaymentError("※セキュリティコードの桁数が不足しています（3〜4桁必要です）。");
+    }
+    setPaymentError(""); setView("CONFIRM");
+  };
+
+  const totalAmount = cart.reduce((sum, item) => sum + item.price, 0);
+
+  useEffect(() => {
+    if (view === "LOADING") {
+      const timer = setTimeout(() => {
+        const newOrder: Order = { id: `ORD-${Date.now()}`, date: new Date().toLocaleString('ja-JP'), items: [...cart], total: totalAmount, payMethod: payMethod };
+        const updatedHistory = [newOrder, ...orderHistory];
+        setOrderHistory(updatedHistory);
+        localStorage.setItem("kattatsumori_orderHistory", JSON.stringify(updatedHistory));
+        
+        const newLifetimeAmt = lifetimeAmount + totalAmount;
+        const newLifetimeOrd = lifetimeOrders + 1;
+        setLifetimeAmount(newLifetimeAmt); setLifetimeOrders(newLifetimeOrd);
+        localStorage.setItem("kattatsumori_lifetimeAmt", String(newLifetimeAmt));
+        localStorage.setItem("kattatsumori_lifetimeOrd", String(newLifetimeOrd));
+
+        setCart([]); setName(""); setAddress(""); setPhone(""); setCardNum(""); setCvv(""); setPayMethod("credit");
+        setView("RESULT");
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [view, cart, totalAmount, orderHistory, payMethod, lifetimeAmount, lifetimeOrders]);
+
+  const MenuContent = () => (
+    <div className="flex flex-col h-full text-gray-800">
+      <div className="p-6 pb-2 border-b border-gray-200">
+        <img src="/logo.png" alt="カッタツモリ" className="h-8 object-contain mb-2" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling?.classList.remove('hidden'); }} />
+        <h2 className="hidden text-2xl font-black text-red-600 tracking-tighter">カッタツモリ</h2>
+        <p className="text-xs text-gray-500 mt-1">日本最大級・妄想通販プラットフォーム</p>
+      </div>
+      <div className="flex-1 overflow-y-auto py-4">
+        <div className="space-y-1 px-3">
+          <button onClick={() => { setView("SHOP"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 px-3 py-3 rounded-xl transition ${view === 'SHOP' ? 'bg-red-50 text-red-600 font-bold' : 'hover:bg-gray-100 text-gray-700'}`}><Home className="w-5 h-5" /> ホーム</button>
+          <button onClick={() => { setView("MYPAGE"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 px-3 py-3 rounded-xl transition ${view === 'MYPAGE' ? 'bg-red-50 text-red-600 font-bold' : 'hover:bg-gray-100 text-gray-700'}`}><User className="w-5 h-5" /> マイページ</button>
+        </div>
+        <div className="mt-8 px-6 text-xs text-gray-400 font-bold uppercase tracking-wider">インフォメーション</div>
+        <div className="space-y-1 px-3 mt-2">
+          <button onClick={() => { setView("HOWTO"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><HelpCircle className="w-5 h-5" /> 使い方</button>
+          <button onClick={() => { setView("TERMS"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><FileText className="w-5 h-5" /> 利用規約</button>
+          <button onClick={() => { setView("PRIVACY"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><ShieldCheck className="w-5 h-5" /> プライバシーポリシー</button>
+          <button onClick={() => { setView("CONTACT"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><Mail className="w-5 h-5" /> お問い合わせ・広告掲載</button>
+        </div>
+        <div className="mt-8 px-6 text-xs text-gray-400 font-bold uppercase tracking-wider">設定とサポート</div>
+        <div className="space-y-1 px-3 mt-2">
+          <button className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><Settings className="w-5 h-5" /> アカウント設定</button>
+          <button onClick={() => { if (window.confirm("購入履歴をすべて消去しますか？\n（※全世界売上への貢献額はキープされます！）")) { localStorage.removeItem("kattatsumori_orderHistory"); setOrderHistory([]); } }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-red-50 transition text-red-500 text-sm mt-4">妄想履歴をリセット</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderStaticPage = (title: string, content: string) => (
+    <div className="p-6 animate-in fade-in slide-in-from-right-4 pb-12">
+      <h2 className="text-2xl font-bold text-gray-900 mb-6 pb-2 border-b border-gray-200">{title}</h2>
+      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm whitespace-pre-wrap text-sm text-gray-700 leading-loose">{content}</div>
+    </div>
+  );
+
+  if (!isHistoryLoaded) return null;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans flex justify-center">
+      
+      <aside className="hidden lg:block w-72 h-screen sticky top-0 border-r border-gray-200 bg-white p-2">
+        <MenuContent />
+      </aside>
+
+      <main className="w-full max-w-md bg-white min-h-screen relative shadow-xl flex flex-col lg:border-r border-gray-200 pb-[72px] lg:pb-0">
+        
+        {isMenuOpen && (
+          <div className="fixed inset-0 z-[100] lg:hidden flex">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsMenuOpen(false)}></div>
+            <div className="relative w-[80%] max-w-[300px] bg-white h-full shadow-2xl animate-in slide-in-from-left">
+              <button onClick={() => setIsMenuOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 bg-gray-100 rounded-full p-2"><X className="w-5 h-5" /></button>
+              <MenuContent />
+            </div>
+          </div>
+        )}
+
+        {/* ▼ 下からスッと出てくるカテゴリメニュー（BottomSheet） */}
+        {isBottomCategoryOpen && (
+          <div className="fixed inset-0 z-[100] lg:hidden flex items-end">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsBottomCategoryOpen(false)}></div>
+            <div className="relative w-full bg-white rounded-t-3xl pb-safe shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+              <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                <h3 className="font-bold text-gray-900 flex items-center gap-2"><Search className="w-5 h-5 text-red-600"/> カテゴリから探す</h3>
+                <button onClick={() => setIsBottomCategoryOpen(false)} className="p-1.5 bg-gray-100 text-gray-500 rounded-full hover:bg-gray-200"><X className="w-5 h-5"/></button>
+              </div>
+              <div className="p-4 max-h-[65vh] overflow-y-auto grid grid-cols-2 gap-2 pb-8">
+                {ALL_CATEGORIES.map((cat, idx) => (
+                  <button key={idx} onClick={() => handleQuickCategory(cat.keyword)} className="text-left text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 px-3 py-3 rounded-xl hover:border-red-500 hover:text-red-600 transition shadow-sm">
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ▼ ヘッダーコンポーネント */}
+        <Header view={view} setView={setView} setIsMenuOpen={setIsMenuOpen} />
+
+        <div className="flex-1 flex flex-col">
+          {view === "HOWTO" && renderStaticPage(PAGE_CONTENT.howto.title, PAGE_CONTENT.howto.content)}
+          {view === "PRIVACY" && renderStaticPage(PAGE_CONTENT.privacy.title, PAGE_CONTENT.privacy.content)}
+          {view === "TERMS" && renderStaticPage(PAGE_CONTENT.terms.title, PAGE_CONTENT.terms.content)}
+          {view === "CONTACT" && renderStaticPage(PAGE_CONTENT.contact.title, PAGE_CONTENT.contact.content)}
+
+          {view === "SHOP" && (
+            <div className="p-4 animate-in fade-in flex-1">
+              
+              <div className="relative bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-y-4 border-red-600 py-8 px-4 mb-6 -mx-4 shadow-[0_10px_30px_rgba(220,38,38,0.2)] flex flex-col items-center justify-center text-center overflow-hidden">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150%] h-[150%] bg-red-600/10 blur-[40px] rounded-full animate-pulse"></div>
+                <div className="relative z-10 w-full">
+                  <div className="flex items-center justify-center gap-2 text-red-400 font-black tracking-widest text-xs mb-2"><Globe className="w-4 h-4" /><span>カッタツモリ 全世界累計妄想売上</span><Globe className="w-4 h-4" /></div>
+                  <div className="flex items-baseline justify-center gap-1 font-black">
+                    <span className="text-3xl text-red-200 drop-shadow-md">¥</span><span className="text-5xl tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white via-red-100 to-red-500 drop-shadow-[0_0_15px_rgba(220,38,38,0.5)]">{currentGlobalSales.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* DSP広告枠 */}
+              <div id="dsp-ad-spot" className="relative w-full h-28 mb-6 rounded-2xl overflow-hidden shadow-sm border border-gray-100 bg-gray-100">
+                {AD_BANNERS.map((banner, index) => (
+                  <div key={banner.id} className={`absolute inset-0 transition-opacity duration-700 ${currentBanner === index ? 'opacity-100 z-10' : 'opacity-0 z-0'} ${banner.bgClass} flex flex-col justify-center items-center text-white text-center px-4`}>
+                    <p className="text-[10px] font-bold tracking-widest mb-1 border border-white/50 px-2 py-0.5 rounded-full bg-black/20">{banner.label}</p>
+                    <h3 className="text-lg font-black">{banner.title}</h3>
+                    <p className="text-xs text-white/90 font-medium mt-1">{banner.subtitle}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* トレンド商品横スクロール */}
+              {trendingItems.length > 0 && (
+                <div className="mb-6 -mx-4 pl-4">
+                  <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2"><Clock className="w-4 h-4 text-red-600" /> さっき誰かが妄想決済した商品</h3>
+                  <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide pr-4">
+                    {trendingItems.map((item, idx) => (
+                      <div key={`trend-${idx}`} onClick={() => { setSelectedItem(item); setView("DETAIL"); }} className="w-32 shrink-0 bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] border border-gray-100 p-2 cursor-pointer hover:shadow-md transition flex flex-col gap-2">
+                        <img src={item.image} className="w-full h-28 object-cover rounded-lg bg-gray-50 border border-gray-100" />
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] font-medium leading-snug line-clamp-2 text-gray-700 h-7">{item.name}</span>
+                          <span className="text-xs font-black text-red-600">¥{item.price.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="relative mb-6">
+                <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+                <input type="text" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={handleSearch} placeholder="キーワードで探す (Enterで実行)" className="w-full bg-gray-100 border border-gray-200 rounded-full py-2.5 pl-10 pr-4 text-gray-900 focus:border-red-500 focus:bg-white outline-none text-sm transition shadow-inner" />
+              </div>
+
+              <div className="mb-6 border-b border-gray-100 pb-4">
+                <div className="grid grid-cols-4 gap-y-4 gap-x-2">
+                  <button onClick={() => handleQuickCategory("人気")} className="flex flex-col items-center gap-1 group"><div className="w-12 h-12 rounded-2xl bg-gray-100 text-gray-600 flex items-center justify-center group-hover:bg-red-50 group-hover:text-red-600 transition"><Grid className="w-6 h-6" /></div><span className="text-[10px] font-bold text-gray-600">総合・人気</span></button>
+                  <button onClick={() => handleQuickCategory("食品")} className="flex flex-col items-center gap-1 group"><div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center group-hover:bg-orange-100 transition"><Utensils className="w-6 h-6" /></div><span className="text-[10px] font-bold text-gray-600">食品・グルメ</span></button>
+                  <button onClick={() => handleQuickCategory("家電")} className="flex flex-col items-center gap-1 group"><div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-100 transition"><Tv className="w-6 h-6" /></div><span className="text-[10px] font-bold text-gray-600">家電・PC</span></button>
+                  <button onClick={() => handleQuickCategory("ファッション")} className="flex flex-col items-center gap-1 group"><div className="w-12 h-12 rounded-2xl bg-pink-50 text-pink-600 flex items-center justify-center group-hover:bg-pink-100 transition"><Shirt className="w-6 h-6" /></div><span className="text-[10px] font-bold text-gray-600">ファッション</span></button>
+                  <button onClick={() => handleQuickCategory("コスメ")} className="flex flex-col items-center gap-1 group"><div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:bg-purple-100 transition"><Sparkles className="w-6 h-6" /></div><span className="text-[10px] font-bold text-gray-600">美容・コスメ</span></button>
+                  <button onClick={() => handleQuickCategory("日用品")} className="flex flex-col items-center gap-1 group"><div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center group-hover:bg-teal-100 transition"><Package className="w-6 h-6" /></div><span className="text-[10px] font-bold text-gray-600">日用品雑貨</span></button>
+                  <button onClick={() => handleQuickCategory("車 バイク")} className="flex flex-col items-center gap-1 group"><div className="w-12 h-12 rounded-2xl bg-zinc-100 text-zinc-600 flex items-center justify-center group-hover:bg-zinc-200 transition"><Car className="w-6 h-6" /></div><span className="text-[10px] font-bold text-gray-600">車・バイク</span></button>
+                  <button onClick={() => handleQuickCategory("スマートフォン")} className="flex flex-col items-center gap-1 group"><div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-100 transition"><Smartphone className="w-6 h-6" /></div><span className="text-[10px] font-bold text-gray-600">スマホ</span></button>
+                </div>
+                <div className="flex justify-center mt-3">
+                  <button onClick={() => setIsCategoryExpanded(!isCategoryExpanded)} className="flex flex-col items-center text-[10px] font-bold text-gray-400 hover:text-red-500 transition">
+                    {isCategoryExpanded ? <ChevronUp className="w-5 h-5"/> : <ChevronDown className="w-5 h-5 animate-bounce"/>}
+                    {isCategoryExpanded ? "閉じる" : "さらにカテゴリを見る"}
+                  </button>
+                </div>
+                {isCategoryExpanded && (
+                  <div className="mt-4 grid grid-cols-2 gap-2 animate-in fade-in slide-in-from-top-2 border-t border-gray-100 pt-4">
+                    {ALL_CATEGORIES.slice(8).map((cat, idx) => (
+                      <button key={idx} onClick={() => { handleQuickCategory(cat.keyword); setIsCategoryExpanded(false); }} className="text-left text-xs font-medium text-gray-700 bg-gray-50 border border-gray-200 px-3 py-2.5 rounded-lg hover:border-red-500 hover:text-red-600 transition truncate shadow-sm">
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-3 mb-6">
+                {!isLoadingMain && items.length > 0 && (
+                  <div className="flex justify-between items-center px-1">
+                    <div className="text-xs font-bold text-gray-500 flex items-center gap-1"><Store className="w-3 h-3" /> {items.length}件</div>
+                    <div className="relative">
+                      <select value={sortOrder} onChange={handleSortChange} className="appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-xs font-medium rounded-lg pl-3 pr-8 py-1.5 outline-none focus:border-red-500 cursor-pointer">
+                        <option value="standard">おすすめ順</option>
+                        <option value="+itemPrice">価格が安い順</option>
+                        <option value="-itemPrice">価格が高い順</option>
+                      </select>
+                      <ArrowDownUp className="absolute right-2 top-1.5 w-3 h-3 text-gray-400 pointer-events-none" />
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center gap-3 bg-gray-50 px-4 py-2.5 rounded-full border border-gray-200">
+                  <span className="text-[10px] font-bold text-gray-600 whitespace-nowrap w-16">予算: {sliderValue >= 30000 ? '指定なし' : `〜¥${(sliderValue / 1000)}k`}</span>
+                  <input type="range" min="1000" max="30000" step="1000" value={sliderValue} onChange={handleSliderChange} onMouseUp={handleSliderRelease} onTouchEnd={handleSliderRelease} className="flex-1 h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-red-600" />
+                </div>
+              </div>
+
+              {isLoadingMain ? (
+                <div className="flex justify-center py-32"><Loader2 className="w-10 h-10 text-red-600 animate-spin" /></div>
+              ) : (
+                <>
+                  {items.length === 0 ? (
+                    <div className="text-center py-20 text-gray-500">
+                      <p>商品が見つかりませんでした😢</p>
+                      <button onClick={() => { setSliderValue(30000); setMaxPrice(0); fetchRakutenItems(currentKeyword, 1, true, sortOrder, 0); }} className="mt-4 px-4 py-2 bg-red-50 text-red-600 rounded-full text-sm font-bold shadow-sm">上限を外して再検索</button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* ▼ コンポーネントを使用！ */}
+                      {items.map((item, index) => (
+                        <ProductCard key={`${item.id}-${index}`} item={item} onClick={() => { setSelectedItem(item); setView("DETAIL"); }} />
+                      ))}
+                    </div>
+                  )}
+                  {isLoadingMore && <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 text-red-600 animate-spin" /></div>}
+                </>
+              )}
+            </div>
+          )}
+
+          {view === "MYPAGE" && (
+            <div className="space-y-6 p-4 animate-in fade-in pb-12">
+              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm space-y-6 relative overflow-hidden">
+                <div className="absolute -top-10 -right-10 w-32 h-32 bg-red-50 rounded-full blur-2xl"></div>
+                <div className="flex items-center gap-4 relative z-10">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center border-2 border-red-600 shrink-0"><User className="w-8 h-8 text-gray-400" /></div>
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">{name || "ゲスト"} 様</h2>
+                    <div className="flex items-center gap-1 mt-1"><Trophy className={`w-4 h-4 ${currentRank.color}`} /><p className={`text-sm font-bold ${currentRank.color}`}>{currentRank.title}</p></div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 border-t border-gray-100 pt-5 relative z-10">
+                  <div><p className="text-xs text-gray-500 mb-1">個人の生涯妄想額</p><p className="text-2xl font-black text-gray-900">¥<span className="text-red-600">{lifetimeAmount.toLocaleString()}</span></p></div>
+                  <div><p className="text-xs text-gray-500 mb-1">総注文数</p><p className="text-2xl font-black text-gray-900">{lifetimeOrders} <span className="text-sm font-normal text-gray-500">回</span></p></div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2"><Clock className="w-5 h-5 text-red-600" />購入履歴</h3>
+                {orderHistory.length === 0 ? (
+                  <div className="bg-white border border-gray-200 rounded-xl p-8 text-center text-gray-500 shadow-sm"><ShoppingBag className="w-10 h-10 mx-auto mb-3 text-gray-300" /><p>履歴はリセットされています</p></div>
+                ) : (
+                  <div className="space-y-4">
+                    {orderHistory.map((order) => (
+                      <div key={order.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 shadow-sm">
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                          <span className="text-xs text-gray-500">{order.date}</span><span className="text-xs font-bold bg-red-50 text-red-700 px-2 py-1 rounded">妄想完了</span>
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto py-1 scrollbar-hide">
+                          {order.items.map((item, i) => (<div key={i} className="relative w-16 h-16 shrink-0"><img src={item.image} className="w-full h-full rounded-md object-cover border border-gray-200" /></div>))}
+                        </div>
+                        <div className="flex justify-between items-end pt-2 border-t border-gray-100">
+                          <span className="text-sm text-gray-500">{order.items.length}点の商品</span><span className="font-bold text-gray-900">合計: <span className="text-red-600 text-lg">¥{order.total.toLocaleString()}</span></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {view === "DETAIL" && selectedItem && (
+            <div className="animate-in fade-in slide-in-from-right-4 bg-white min-h-screen pb-24">
+              <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-80 object-cover bg-gray-50 border-b border-gray-200" />
+              <div className="p-4 space-y-4">
+                <div className="flex items-center text-sm text-yellow-500"><Star className="w-4 h-4 fill-current" /><span className="ml-1 font-bold text-base text-gray-800">{selectedItem.rating > 0 ? selectedItem.rating.toFixed(2) : "-"}</span><span className="text-gray-500 ml-2">({selectedItem.reviews.toLocaleString()}件)</span></div>
+                <h2 className="text-lg font-medium leading-relaxed text-gray-900">{selectedItem.name}</h2>
+                <div className="border-y border-gray-100 py-4 my-4"><span className="text-red-600 font-bold text-3xl">¥{selectedItem.price.toLocaleString()}</span><span className="text-sm text-gray-500 ml-2">送料無料</span></div>
+                <div className="bg-gray-50 p-4 rounded-xl text-sm text-gray-700"><p className="font-bold text-red-600 mb-2">{selectedItem.delivery}</p><div className="flex items-center mt-2 border-t border-gray-200 pt-2"><Store className="w-4 h-4 mr-2 text-gray-500" />{selectedItem.shopName}</div></div>
+                <div className="text-sm text-gray-600 leading-relaxed pt-2 pb-8 line-clamp-6">{selectedItem.description}</div>
+              </div>
+              <div className="fixed bottom-0 w-full max-w-md p-4 bg-white/95 backdrop-blur border-t border-gray-200 z-50">
+                <div className="flex gap-3">
+                  <button onClick={() => setView("SHOP")} className="flex-[3] bg-white text-gray-700 py-4 rounded-xl font-bold text-sm border border-gray-300 hover:bg-gray-50 active:scale-95 transition">戻る</button>
+                  <button onClick={() => addToCart(selectedItem)} className="flex-[7] bg-red-600 hover:bg-red-700 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-red-500/30 active:scale-95 transition">買い物かごに追加</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {view === "CART" && (
+            <div className="space-y-6 p-4 animate-in fade-in slide-in-from-right-4 pb-12">
+              <h2 className="text-2xl font-bold text-gray-900">買い物かご</h2>
+              {cart.length === 0 ? (
+                <div className="text-center py-20 bg-gray-50 rounded-2xl border border-gray-200"><ShoppingBag className="w-16 h-16 text-gray-300 mx-auto mb-4" /><p className="text-gray-500">かごは空です</p><button onClick={() => setView("SHOP")} className="mt-6 px-8 py-3 bg-gray-800 rounded-full text-sm text-white font-medium hover:bg-gray-700 active:scale-95 transition">買い物を続ける</button></div>
+              ) : (
+                <div className="space-y-4">
+                  {cart.map((item, i) => (
+                    <div key={i} className="flex gap-4 items-center bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+                      <img src={item.image} className="w-20 h-20 object-cover rounded-lg shrink-0 bg-gray-50" />
+                      <div className="flex-1 flex flex-col justify-between h-20"><span className="font-medium text-sm line-clamp-2 text-gray-900">{item.name}</span><div className="text-red-600 font-bold text-lg">¥{item.price.toLocaleString()}</div></div>
+                    </div>
+                  ))}
+                  <div className="flex justify-between items-end pt-4 border-t border-gray-200 mt-6 px-2"><span className="text-gray-500 font-medium">合計</span><span className="text-red-600 font-bold text-3xl">¥{totalAmount.toLocaleString()}</span></div>
+                  <button onClick={() => setView("ADDRESS")} className="w-full bg-red-600 text-white py-4 rounded-xl font-bold text-lg mt-4 shadow-lg shadow-red-500/30 active:scale-95 transition">ご購入手続きへ</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {view === "ADDRESS" && (
+            <div className="space-y-6 p-4 animate-in fade-in slide-in-from-right-4">
+               <div className="bg-red-50 border border-red-200 p-4 rounded-xl shadow-sm space-y-2"><div className="flex items-center gap-2 text-red-700 font-bold"><AlertTriangle className="w-5 h-5" /><span>実際の情報を入力するのがオススメ！</span></div><p className="text-xs text-red-800 leading-relaxed font-medium">よりリアルでスリリングな妄想を楽しむために、ぜひご自身の本当の住所やお名前を入力してみてください。</p><p className="text-[10px] text-red-600/80 leading-relaxed border-t border-red-200/50 pt-2">※入力された情報はシステムに一切保存・送信されません。完全に安全な妄想をお楽しみいただけます。</p></div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 mb-4">お届け先（架空）</h2>
+                <div className="space-y-4">
+                  <div><label className="block text-sm text-gray-600 mb-1">氏名 <span className="text-red-500 text-xs">*</span></label><input type="text" value={name} onChange={(e)=>setName(e.target.value)} className={`w-full bg-gray-50 border ${addressError.includes('氏名') ? 'border-red-500' : 'border-gray-300'} rounded-lg p-3 text-gray-900 outline-none focus:border-red-500 transition`} placeholder="例：山田 太郎" /></div>
+                  <div><label className="block text-sm text-gray-600 mb-1">住所 <span className="text-red-500 text-xs">*</span></label><input type="text" value={address} onChange={(e)=>setAddress(e.target.value)} className={`w-full bg-gray-50 border ${addressError.includes('住所') ? 'border-red-500' : 'border-gray-300'} rounded-lg p-3 text-gray-900 outline-none focus:border-red-500 transition`} placeholder="例：東京都港区六本木〇-〇-〇" /></div>
+                  <div><label className="block text-sm text-gray-600 mb-1">電話番号 <span className="text-red-500 text-xs">*</span></label><input type="tel" value={phone} onChange={(e)=>setPhone(e.target.value)} className={`w-full bg-gray-50 border ${addressError.includes('電話') ? 'border-red-500' : 'border-gray-300'} rounded-lg p-3 text-gray-900 outline-none focus:border-red-500 transition`} placeholder="例：090-0000-0000" /></div>
+                </div>
+              </div>
+              {addressError && <p className="text-red-600 font-bold text-sm text-center animate-pulse bg-red-50 py-2 rounded-lg">{addressError}</p>}
+              <button onClick={handleAddressSubmit} className="w-full bg-red-600 text-white py-4 rounded-xl font-bold text-lg active:scale-95 transition shadow-lg shadow-red-500/30">次へ</button>
+            </div>
+          )}
+
+          {view === "PAYMENT" && (
+            <div className="space-y-6 p-4 animate-in fade-in slide-in-from-right-4">
+              <div className="bg-red-50 border border-red-200 p-4 rounded-xl shadow-sm space-y-2"><div className="flex items-center gap-2 text-red-700 font-bold"><AlertTriangle className="w-5 h-5" /><span>本物のカード情報を入れると興奮度MAX！</span></div><p className="text-[10px] text-red-600/80 leading-relaxed border-t border-red-200/50 pt-2">※入力された情報はシステムに一切保存・送信されません。完全に安全な妄想をお楽しみいただけます。</p></div>
+              <h2 className="text-xl font-bold text-gray-900 mb-4">お支払い方法（架空）</h2>
+              <div className="space-y-3">
+                <label className={`block border p-4 rounded-xl cursor-pointer transition ${payMethod === 'credit' ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-white'}`}><input type="radio" name="pay" value="credit" checked={payMethod === 'credit'} onChange={()=>setPayMethod('credit')} className="mr-3 accent-red-600" /><span className="font-medium text-gray-900">クレジットカード</span></label>
+                <label className={`block border p-4 rounded-xl cursor-pointer transition ${payMethod === 'convenience' ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-white'}`}><input type="radio" name="pay" value="convenience" checked={payMethod === 'convenience'} onChange={()=>setPayMethod('convenience')} className="mr-3 accent-red-600" /><span className="font-medium text-gray-900">コンビニ払い (前払い)</span></label>
+                <label className={`block border p-4 rounded-xl cursor-pointer transition ${payMethod === 'cash_on_delivery' ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-white'}`}><input type="radio" name="pay" value="cash_on_delivery" checked={payMethod === 'cash_on_delivery'} onChange={()=>setPayMethod('cash_on_delivery')} className="mr-3 accent-red-600" /><span className="font-medium text-gray-900">代金引換 (着払い)</span></label>
+                <label className={`block border p-4 rounded-xl cursor-pointer transition ${payMethod === 'bank_transfer' ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-white'}`}><input type="radio" name="pay" value="bank_transfer" checked={payMethod === 'bank_transfer'} onChange={()=>setPayMethod('bank_transfer')} className="mr-3 accent-red-600" /><span className="font-medium text-gray-900">銀行振込 (前払い)</span></label>
+              </div>
+              {payMethod === 'credit' && (
+                <div className="pt-4 space-y-4 animate-in fade-in slide-in-from-top-2">
+                  <div><label className="block text-sm text-gray-600 mb-1">カード番号（14桁〜16桁） <span className="text-red-500 text-xs">*</span></label><input type="text" value={cardNum} onChange={(e)=>setCardNum(e.target.value)} className={`w-full bg-gray-50 border ${paymentError.includes('番号') ? 'border-red-500' : 'border-gray-300'} rounded-lg p-3 text-gray-900 outline-none focus:border-red-500 transition tracking-widest`} placeholder="（例）4545 1234 5678 9000" maxLength={16}/></div>
+                  <div><label className="block text-sm text-gray-600 mb-1">セキュリティコード（3桁〜4桁） <span className="text-red-500 text-xs">*</span></label><input type="password" value={cvv} onChange={(e)=>setCvv(e.target.value)} className={`w-full bg-gray-50 border ${paymentError.includes('セキュリティ') ? 'border-red-500' : 'border-gray-300'} rounded-lg p-3 text-gray-900 outline-none focus:border-red-500 transition tracking-widest`} placeholder="（例）123" maxLength={4}/></div>
+                </div>
+              )}
+              {paymentError && <p className="text-red-600 font-bold text-sm text-center animate-pulse bg-red-50 py-2 rounded-lg">{paymentError}</p>}
+              <button onClick={handlePaymentSubmit} className="w-full bg-red-600 text-white py-4 rounded-xl font-bold text-lg mt-6 active:scale-95 transition shadow-lg shadow-red-500/30">次へ</button>
+            </div>
+          )}
+
+          {view === "CONFIRM" && (
+            <div className="space-y-6 p-4 animate-in fade-in slide-in-from-right-4">
+              <h2 className="text-2xl font-bold text-red-600 border-b border-gray-200 pb-2">妄想注文を確定します</h2>
+              <div className="bg-white rounded-xl p-4 border border-gray-200 space-y-4 shadow-sm">
+                <p className="font-bold text-gray-900 border-b border-gray-100 pb-2">ご注文商品</p>
+                {cart.map((item, i) => (
+                  <div key={i} className="flex gap-4 items-start"><img src={item.image} className="w-20 h-20 rounded-lg object-cover shrink-0 border border-gray-200 bg-gray-50" /><div className="flex-1 flex flex-col justify-between h-20"><div className="font-medium text-sm line-clamp-2 text-gray-800 leading-snug">{item.name}</div><div className="font-bold text-lg text-gray-900">¥{item.price.toLocaleString()}</div></div></div>
+                ))}
+                <div className="border-t border-gray-200 pt-3 flex justify-between items-end mt-2"><p className="text-gray-500 font-medium">ご請求金額</p><p className="font-bold text-4xl text-red-600">¥{totalAmount.toLocaleString()}</p></div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 space-y-3">
+                <div><p className="text-gray-500 text-xs mb-1">お届け先</p><p className="font-medium text-sm text-gray-900">{name} 様</p></div>
+                <div className="border-t border-gray-200 pt-3"><p className="text-gray-500 text-xs mb-1">お支払い情報</p><p className="font-medium text-sm text-gray-900">{payMethod === 'credit' && `クレカ (末尾: ${cardNum.slice(-4) || "1234"})`}{payMethod === 'convenience' && 'コンビニ払い (前払い)'}{payMethod === 'cash_on_delivery' && '代金引換 (着払い)'}{payMethod === 'bank_transfer' && '銀行振込 (前払い)'}</p></div>
+              </div>
+              <div className="space-y-4 pt-2">
+                <button onClick={() => setView("LOADING")} className="w-full bg-red-600 text-white py-5 rounded-xl font-bold text-xl shadow-lg shadow-red-500/30 animate-pulse active:scale-95 transition">注文を確定する</button>
+                <button onClick={() => setView("CART")} className="w-full bg-white text-gray-700 py-4 rounded-xl font-medium text-sm hover:bg-gray-50 transition active:scale-95 border border-gray-300">キャンセル</button>
+              </div>
+            </div>
+          )}
+
+          {view === "LOADING" && (
+            <div className="flex flex-col items-center justify-center py-40 space-y-6 p-4 min-h-screen">
+              <Loader2 className="w-16 h-16 text-red-600 animate-spin" />
+              <p className="text-xl font-bold tracking-widest text-gray-800">妄想決済中...</p>
+            </div>
+          )}
+
+          {view === "RESULT" && (
+            <div className="space-y-8 py-16 p-4 text-center animate-in fade-in zoom-in duration-500 pb-12">
+              <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-200"><ShieldCheck className="w-10 h-10 text-emerald-600" /></div>
+              <h2 className="text-4xl font-black text-gray-900 tracking-widest mb-2">注文完了</h2>
+              <p className="text-sm text-gray-500 mb-6">※これは妄想です。実際には商品は届かず、お金も減りません。</p>
+
+              {orderHistory[0]?.payMethod === 'convenience' && (
+                <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">コンビニ払込票番号（架空）</p><p className="text-3xl font-black text-gray-900 tracking-widest text-center my-4">9876-5432-1098</p><p className="text-gray-500 text-xs">お近くの架空のコンビニエンスストアのレジにて、上記の番号をお伝えいただき、架空の現金でお支払いください。</p></div>
+              )}
+              {orderHistory[0]?.payMethod === 'bank_transfer' && (
+                <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-3 border-b border-gray-300 pb-2">お振込先口座（架空）</p><div className="space-y-1 text-gray-700 font-medium"><p>妄想銀行 (0000)</p><p>エアブランチ支店 (123)</p><p>普通 <span className="font-bold text-lg tracking-wider">1234567</span></p><p>カ）カッタツモリ</p></div><p className="text-red-500 font-bold text-xs mt-3">※絶対に振り込まないでください。</p></div>
+              )}
+              {orderHistory[0]?.payMethod === 'cash_on_delivery' && (
+                <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">商品到着時のお願い</p><p className="text-gray-700">商品（架空）の到着時に、配達員（架空）へ代金 <strong className="text-lg text-red-600">¥{orderHistory[0]?.total.toLocaleString()}</strong> を架空の現金でお支払いください。</p></div>
+              )}
+
+              <div className="pt-4 space-y-4">
+                <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg">オススメ</div>
+                  <p className="text-sm text-gray-700 mb-4 font-bold">＼ 実際に欲しくなった方はこちら ／</p>
+                  
+                  <a href={orderHistory.length > 0 && orderHistory[0].items.length > 0 ? orderHistory[0].items[url] : "#"} target="_blank" rel="noopener noreferrer" className="w-full bg-[#BF0000] hover:bg-red-700 text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition shadow-lg active:scale-95 mb-3">
+                    <ShoppingBag className="w-6 h-6" />本物を楽天で購入する
+                  </a>
+                  <a href={orderHistory.length > 0 && orderHistory[0].items.length > 0 ? `https://www.amazon.co.jp/s?k=${encodeURIComponent(orderHistory[0].items[0].name)}${APP_CONFIG.affiliate.amazonTag ? `&tag=${APP_CONFIG.affiliate.amazonTag}` : ""}` : "https://www.amazon.co.jp/"} target="_blank" rel="noopener noreferrer" className="w-full bg-gray-800 hover:bg-gray-900 text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition shadow-lg active:scale-95">
+                    <Package className="w-6 h-6" />Amazonで探してみる
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ▼ 全ページ共通の本格的なフッター（カテゴリ一覧を削除しスッキリ化） */}
+          {view !== "LOADING" && (
+            <footer className="border-t border-gray-200 bg-gray-50 py-10 px-4 mt-auto">
+              <div className="flex flex-wrap justify-center gap-x-6 gap-y-3 text-xs font-medium text-gray-600 mb-8">
+                <button onClick={() => { setView("HOWTO"); window.scrollTo(0,0); }} className="hover:text-red-600 transition">使い方ガイド</button>
+                <button onClick={() => { setView("CONTACT"); window.scrollTo(0,0); }} className="hover:text-red-600 transition">お問い合わせ</button>
+                <button onClick={() => { setView("TERMS"); window.scrollTo(0,0); }} className="hover:text-red-600 transition">利用規約</button>
+                <button onClick={() => { setView("PRIVACY"); window.scrollTo(0,0); }} className="hover:text-red-600 transition">プライバシーポリシー</button>
+              </div>
+              <div className="flex justify-center mb-8">
+                <a href="#" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-[#1A1F2E] text-white px-8 py-3 rounded-full text-xs font-bold hover:bg-black transition shadow-sm active:scale-95">
+                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 24.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>公式Xをフォロー
+                </a>
+              </div>
+              <p className="text-center text-[10px] text-gray-400 font-bold tracking-wider">© 2026 カッタツモリ・All Rights Reserved.</p>
+            </footer>
+          )}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+        <BottomNav view={view} setView={setView} cartCount={cart.length} isBottomCategoryOpen={isBottomCategoryOpen} setIsBottomCategoryOpen={setIsBottomCategoryOpen} />
       </main>
+
+      <aside className="hidden lg:block w-80 h-screen sticky top-0 p-6 bg-white border-l border-gray-200">
+        <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-md mb-6">
+          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><ShoppingCart className="w-5 h-5 text-red-600" /> 今のカート状況</h3>
+          {cart.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-4">かごは空です</p>
+          ) : (
+            <div className="space-y-3">
+              {cart.slice(0, 3).map((item, i) => (
+                <div key={i} className="flex gap-3 items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0"><img src={item.image} className="w-12 h-12 rounded object-cover border border-gray-200" /><div className="flex-1 overflow-hidden"><p className="text-xs text-gray-700 truncate">{item.name}</p><p className="font-bold text-sm text-red-600">¥{item.price.toLocaleString()}</p></div></div>
+              ))}
+              {cart.length > 3 && <p className="text-xs text-center text-gray-400 pt-2">他 {cart.length - 3} 件</p>}
+              <div className="pt-3 border-t border-gray-200 flex justify-between items-center font-bold text-gray-900"><span>合計</span><span className="text-red-600 text-lg">¥{totalAmount.toLocaleString()}</span></div>
+              <button onClick={() => setView("CART")} className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg text-sm font-bold transition mt-2 shadow-sm">カートを開く</button>
+            </div>
+          )}
+        </div>
+        <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-md">
+          <div className="flex justify-between items-end mb-4"><h3 className="font-bold text-gray-900 flex items-center gap-2"><Clock className="w-5 h-5 text-red-600" /> 妄想の記録</h3><div className="text-right"><p className="text-[10px] text-gray-500">個人の生涯使用額</p><p className="text-lg font-bold text-gray-900 leading-none">¥<span className="text-red-600">{lifetimeAmount.toLocaleString()}</span></p></div></div>
+          {orderHistory.length === 0 ? (<p className="text-sm text-gray-500 text-center py-4 border-t border-gray-100 pt-4">履歴はありません</p>) : (
+             <div className="space-y-3 border-t border-gray-100 pt-4">
+              {orderHistory.slice(0, 3).map((order) => (
+                <div key={order.id} className="bg-gray-50 rounded-lg p-3 border border-gray-200"><p className="text-xs text-gray-500 mb-1">{order.date}</p><div className="flex justify-between items-end"><p className="text-sm font-bold text-red-600">¥{order.total.toLocaleString()}</p><p className="text-xs text-gray-500">{order.items.length}点</p></div></div>
+              ))}
+            </div>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }
