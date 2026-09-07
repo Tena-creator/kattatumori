@@ -626,9 +626,12 @@ export default function KattaTsumoriApp() {
                   <div className="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg">オススメ</div>
                   <p className="text-sm text-gray-700 mb-4 font-bold">＼ 実際に欲しくなった方はこちら ／</p>
                   
-                  <a href={orderHistory.length > 0 && orderHistory[0].items.length > 0 ? orderHistory[0].items[url] : "#"} target="_blank" rel="noopener noreferrer" className="w-full bg-[#BF0000] hover:bg-red-700 text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition shadow-lg active:scale-95 mb-3">
+                  {/* ▼ タイポ修正: orderHistory[0].items[0].url に変更しました */}
+                  <a href={orderHistory.length > 0 && orderHistory[0].items.length > 0 ? orderHistory[0].items[0].url : "#"} target="_blank" rel="noopener noreferrer" className="w-full bg-[#BF0000] hover:bg-red-700 text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition shadow-lg active:scale-95 mb-3">
                     <ShoppingBag className="w-6 h-6" />本物を楽天で購入する
                   </a>
+
+                  {/* ▼ Amazonアフィリエイトへの動的リンク設定 */}
                   <a href={orderHistory.length > 0 && orderHistory[0].items.length > 0 ? `https://www.amazon.co.jp/s?k=${encodeURIComponent(orderHistory[0].items[0].name)}${APP_CONFIG.affiliate.amazonTag ? `&tag=${APP_CONFIG.affiliate.amazonTag}` : ""}` : "https://www.amazon.co.jp/"} target="_blank" rel="noopener noreferrer" className="w-full bg-gray-800 hover:bg-gray-900 text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition shadow-lg active:scale-95">
                     <Package className="w-6 h-6" />Amazonで探してみる
                   </a>
@@ -637,7 +640,7 @@ export default function KattaTsumoriApp() {
             </div>
           )}
 
-          {/* ▼ 全ページ共通の本格的なフッター（カテゴリ一覧を削除しスッキリ化） */}
+          {/* ▼ 全ページ共通の本格的なフッター */}
           {view !== "LOADING" && (
             <footer className="border-t border-gray-200 bg-gray-50 py-10 px-4 mt-auto">
               <div className="flex flex-wrap justify-center gap-x-6 gap-y-3 text-xs font-medium text-gray-600 mb-8">
