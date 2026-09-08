@@ -67,6 +67,8 @@ export default function KattaTsumoriApp() {
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [currentBanner, setCurrentBanner] = useState(0);
+  
+  const [isCheckoutFailed, setIsCheckoutFailed] = useState(false);
 
   const [cmsPages, setCmsPages] = useState<Record<string, { title: string; content: string }>>({});
 
@@ -270,8 +272,8 @@ export default function KattaTsumoriApp() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [isLoadingMain, isLoadingMore, currentPage, currentKeyword, items.length, view, sortOrder, maxPrice]);
 
-  const handleQuickCategory = (keyword: string) => {
-    setCurrentKeyword(keyword); setSearchInput(""); setCurrentPage(1); setIsBottomCategoryOpen(false);
+  // ▼ 商品リストの上部にスクロールする共通関数
+  const scrollToProducts = () => {
     setTimeout(() => {
       const element = document.getElementById("product-list-top");
       if (element) {
@@ -279,12 +281,23 @@ export default function KattaTsumoriApp() {
         window.scrollTo({ top: y, behavior: 'smooth' });
       }
     }, 100);
+  };
+
+  const handleQuickCategory = (keyword: string) => {
+    setCurrentKeyword(keyword); setSearchInput(""); setCurrentPage(1); setIsBottomCategoryOpen(false);
+    scrollToProducts();
     fetchRakutenItems(keyword, 1, true, sortOrder, maxPrice);
   };
 
-  const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && searchInput.trim() !== "") {
-      setCurrentKeyword(searchInput); setCurrentPage(1); fetchRakutenItems(searchInput, 1, true, sortOrder, maxPrice);
+  // ▼ エンターキーを押した時 ＆ 検索ボタンを押した時の両方に対応
+  const handleSearch = (e?: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!e || e.key === 'Enter') {
+      if (searchInput.trim() !== "") {
+        setCurrentKeyword(searchInput); 
+        setCurrentPage(1); 
+        scrollToProducts();
+        fetchRakutenItems(searchInput, 1, true, sortOrder, maxPrice);
+      }
     }
   };
 
@@ -363,6 +376,13 @@ export default function KattaTsumoriApp() {
         }
 
         setCart([]); setName(""); setAddress(""); setPhone(""); setCardNum(""); setCvv(""); setPayMethod("credit");
+        
+        if (Math.random() < 0.0001) {
+          setIsCheckoutFailed(true);
+        } else {
+          setIsCheckoutFailed(false);
+        }
+        
         setView("RESULT");
       }, 3000);
       return () => clearTimeout(timer);
@@ -532,7 +552,8 @@ export default function KattaTsumoriApp() {
               )}
 
               <div className="relative mb-6">
-                <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+                {/* ▼ 虫眼鏡アイコンをクリック可能に修正 */}
+                <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400 cursor-pointer hover:text-red-500 transition" onClick={() => handleSearch()} />
                 <input type="text" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={handleSearch} placeholder="キーワードで探す (Enterで実行)" className="w-full bg-gray-100 border border-gray-200 rounded-full py-2.5 pl-10 pr-4 text-gray-900 focus:border-red-500 focus:bg-white outline-none text-sm transition shadow-inner" />
               </div>
 
@@ -884,34 +905,55 @@ export default function KattaTsumoriApp() {
 
           {view === "RESULT" && (
             <div className="space-y-8 py-16 p-4 text-center animate-in fade-in zoom-in duration-500 pb-12 flex flex-col h-full">
-              <div>
-                <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-200"><ShieldCheck className="w-10 h-10 text-emerald-600" /></div>
-                <h2 className="text-4xl font-black text-gray-900 tracking-widest mb-2">注文完了</h2>
-                <p className="text-sm text-gray-500 mb-6">※これは妄想です。実際には商品は届かず、お金も減りません。</p>
-
-                {orderHistory[0]?.payMethod === 'convenience' && (
-                  <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">コンビニ払込票番号（架空）</p><p className="text-3xl font-black text-gray-900 tracking-widest text-center my-4">9876-5432-1098</p><p className="text-gray-500 text-xs">お近くの架空のコンビニエンスストアのレジにて、上記の番号をお伝えいただき、架空の現金でお支払いください。</p></div>
-                )}
-                {orderHistory[0]?.payMethod === 'bank_transfer' && (
-                  <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-3 border-b border-gray-300 pb-2">お振込先口座（架空）</p><div className="space-y-1 text-gray-700 font-medium"><p>妄想銀行 (0000)</p><p>エアブランチ支店 (123)</p><p>普通 <span className="font-bold text-lg tracking-wider">1234567</span></p><p>カ）カッタツモリ</p></div><p className="text-red-500 font-bold text-xs mt-3">※絶対に振り込まないでください。</p></div>
-                )}
-                {orderHistory[0]?.payMethod === 'cash_on_delivery' && (
-                  <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">商品到着時のお願い</p><p className="text-gray-700">商品（架空）の到着時に、配達員（架空）へ代金 <strong className="text-lg text-red-600">¥{orderHistory[0]?.total.toLocaleString()}</strong> を架空の現金でお支払いください。</p></div>
-                )}
-
-                <div className="pt-4 space-y-4">
-                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 text-center">
-                    <p className="text-sm text-gray-800 mb-3 font-bold">＼ 実際に欲しくなった方は ／</p>
-                    <p className="text-xs text-gray-600 leading-relaxed mb-5 inline-block text-left">
-                      マイページの「購入履歴」を開くと、妄想した各商品を実際のショップ（楽天・Amazon）で確認・購入することができます。
-                    </p>
-                    
-                    <button onClick={() => { setView("MYPAGE"); window.scrollTo(0,0); }} className="w-full bg-white border border-gray-300 text-gray-700 py-3.5 rounded-xl font-bold text-sm hover:bg-gray-100 transition active:scale-95 flex items-center justify-center gap-2 shadow-sm">
-                      <User className="w-5 h-5 text-gray-400" /> マイページへ移動する
+              {isCheckoutFailed ? (
+                <div>
+                  <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-200">
+                    <X className="w-10 h-10 text-red-600" />
+                  </div>
+                  <h2 className="text-4xl font-black text-gray-900 tracking-widest mb-2">決済失敗</h2>
+                  <p className="text-lg font-bold text-gray-800 mt-8 mb-2">……びっくりした？</p>
+                  <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+                    なんちゃって！<br />
+                    裏ではちゃんと買えてます。<br />
+                    0.01%の確率でこの画面が出る隠し機能でした🥳
+                  </p>
+                  
+                  <div className="pt-4">
+                    <button onClick={() => { setIsCheckoutFailed(false); setView("MYPAGE"); window.scrollTo(0,0); }} className="w-full bg-white border border-gray-300 text-gray-700 py-4 rounded-xl font-bold text-sm hover:bg-gray-100 transition active:scale-95 flex items-center justify-center gap-2 shadow-sm">
+                      <User className="w-5 h-5 text-gray-400" /> マイページで履歴を見る
                     </button>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-200"><ShieldCheck className="w-10 h-10 text-emerald-600" /></div>
+                  <h2 className="text-4xl font-black text-gray-900 tracking-widest mb-2">注文完了</h2>
+                  <p className="text-sm text-gray-500 mb-6">※これは妄想です。実際には商品は届かず、お金も減りません。</p>
+
+                  {orderHistory[0]?.payMethod === 'convenience' && (
+                    <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">コンビニ払込票番号（架空）</p><p className="text-3xl font-black text-gray-900 tracking-widest text-center my-4">9876-5432-1098</p><p className="text-gray-500 text-xs">お近くの架空のコンビニエンスストアのレジにて、上記の番号をお伝えいただき、架空の現金でお支払いください。</p></div>
+                  )}
+                  {orderHistory[0]?.payMethod === 'bank_transfer' && (
+                    <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-3 border-b border-gray-300 pb-2">お振込先口座（架空）</p><div className="space-y-1 text-gray-700 font-medium"><p>妄想銀行 (0000)</p><p>エアブランチ支店 (123)</p><p>普通 <span className="font-bold text-lg tracking-wider">1234567</span></p><p>カ）カッタツモリ</p></div><p className="text-red-500 font-bold text-xs mt-3">※絶対に振り込まないでください。</p></div>
+                  )}
+                  {orderHistory[0]?.payMethod === 'cash_on_delivery' && (
+                    <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">商品到着時のお願い</p><p className="text-gray-700">商品（架空）の到着時に、配達員（架空）へ代金 <strong className="text-lg text-red-600">¥{orderHistory[0]?.total.toLocaleString()}</strong> を架空の現金でお支払いください。</p></div>
+                  )}
+
+                  <div className="pt-4 space-y-4">
+                    <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 text-center">
+                      <p className="text-sm text-gray-800 mb-3 font-bold">＼ 実際に欲しくなった方は ／</p>
+                      <p className="text-xs text-gray-600 leading-relaxed mb-5 inline-block text-left">
+                        マイページの「購入履歴」を開くと、妄想した各商品を実際のショップ（楽天・Amazon）で確認・購入することができます。
+                      </p>
+                      
+                      <button onClick={() => { setView("MYPAGE"); window.scrollTo(0,0); }} className="w-full bg-white border border-gray-300 text-gray-700 py-3.5 rounded-xl font-bold text-sm hover:bg-gray-100 transition active:scale-95 flex items-center justify-center gap-2 shadow-sm">
+                        <User className="w-5 h-5 text-gray-400" /> マイページへ移動する
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               
               <div className="mt-auto pt-8">
                 <ZucksAd type="rectangle" />
