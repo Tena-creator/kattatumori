@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next"; // ← ★ Viewport を追加！
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
@@ -13,7 +13,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// ▼ これを新しく追加！
 export const viewport: Viewport = {
   themeColor: "#ffffff",
 };
@@ -27,13 +26,33 @@ export const metadata: Metadata = {
     apple: "/apple-icon.png",
   },
   manifest: "/manifest.json",
-  // themeColor: "#ffffff", ← ★ ここにあった themeColor を削除！
   other: {
     "google-adsense-account": "ca-pub-7372592854852772",
   },
+  // ▼ ここからが追加したOGP（SNSシェア用）の設定です！
+  openGraph: {
+    title: "カッタツモリ | お金が減らない妄想通販",
+    description: "ストレス発散に最高！お金が減らない合法ドーパミン爆買いアプリ誕生。",
+    url: "https://dopamine-rush.shop",
+    siteName: "カッタツモリ",
+    images: [
+      {
+        url: "https://dopamine-rush.shop/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "カッタツモリ OGP画像",
+      },
+    ],
+    locale: "ja_JP",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "カッタツモリ | お金が減らない妄想通販",
+    description: "ストレス発散に最高！お金が減らない合法ドーパミン爆買いアプリ誕生。",
+    images: ["https://dopamine-rush.shop/og-image.png"],
+  },
 };
-
-// ... 以下はそのまま（RootLayout関数など）...
 
 export default function RootLayout({
   children,
@@ -46,7 +65,8 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <link rel="icon" href="/favicon.ico" sizes="any" />
+        {/* ▼ .ico から .png に修正してあります！ */}
+        <link rel="icon" href="/favicon.png" sizes="any" />
         <link rel="apple-touch-icon" href="/apple-icon.png" />
 
         {/* ==========================================
