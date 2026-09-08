@@ -1,0 +1,21 @@
+{
+  "name": "カッタツモリ | 妄想通販",
+  "short_name": "カッタツモリ",
+  "description": "お金が減らない妄想通販プラットフォーム",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#dc2626",
+  "icons": [
+    {
+      "src": "/apple-icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -20,4 +20,4 @@ export type Order = {
   payMethod: string;
 };
 
-export type ViewState = "SHOP" | "DETAIL" | "CART" | "ADDRESS" | "PAYMENT" | "CONFIRM" | "LOADING" | "RESULT" | "MYPAGE" | "HOWTO" | "PRIVACY" | "TERMS" | "CONTACT";
+export type ViewState = "SHOP" | "DETAIL" | "CART" | "ADDRESS" | "PAYMENT" | "CONFIRM" | "LOADING" | "RESULT" | "MYPAGE" | "HOWTO" | "PRIVACY" | "TERMS" | "CONTACT"| "PWA";

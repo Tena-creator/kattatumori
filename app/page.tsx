@@ -28,7 +28,6 @@ function generateUUID() {
   });
 }
 
-// ▼ プリセットアイコンの定義
 const ICONS = { User, Cat, Dog, Ghost, Smile, Crown, Rocket };
 
 export default function KattaTsumoriApp() {
@@ -71,7 +70,6 @@ export default function KattaTsumoriApp() {
 
   const [cmsPages, setCmsPages] = useState<Record<string, { title: string; content: string }>>({});
 
-  // Supabase用 & プロフィール用のState
   const [userId, setUserId] = useState<string>("");
   const [profileName, setProfileName] = useState<string>("ゲスト");
   const [profileIcon, setProfileIcon] = useState<keyof typeof ICONS>("User");
@@ -80,6 +78,10 @@ export default function KattaTsumoriApp() {
   const [favorites, setFavorites] = useState<Item[]>([]);
   
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [globalSales, setGlobalSales] = useState<number>(APP_CONFIG.globalBaseSales);
+
+  // ▼ isActiveがtrueのものだけを抽出する処理！
+  const activeBanners = AD_BANNERS ? AD_BANNERS.filter((b: any) => b.isActive) : [];
 
   useEffect(() => {
     const initSupabase = async () => {
@@ -111,11 +113,16 @@ export default function KattaTsumoriApp() {
         }));
         setFavorites(mappedFavs);
       }
+
+      const { data: ordersData } = await supabase.from('orders').select('total_amount').limit(3000);
+      if (ordersData) {
+        const sum = ordersData.reduce((acc, order) => acc + Number(order.total_amount || 0), 0);
+        setGlobalSales(APP_CONFIG.globalBaseSales + sum);
+      }
     };
     initSupabase();
   }, []);
 
-  // ▼ マイページの情報を保存する処理
   const handleSaveProfile = async () => {
     localStorage.setItem("kattatsumori_profileName", profileName || "ゲスト");
     localStorage.setItem("kattatsumori_profileIcon", profileIcon);
@@ -123,8 +130,6 @@ export default function KattaTsumoriApp() {
       await supabase.from('profiles').update({ age_group: ageGroup, gender: gender }).eq('id', userId);
     }
     setIsEditingProfile(false);
-    
-    // 属性が変わったので、裏でこっそり検索結果とトレンドをリロードして最適化！
     fetchRakutenItems(currentKeyword, 1, true, sortOrder, maxPrice);
   };
 
@@ -170,8 +175,6 @@ export default function KattaTsumoriApp() {
     setIsHistoryLoaded(true);
   }, []);
 
-  const currentGlobalSales = APP_CONFIG.globalBaseSales + lifetimeAmount;
-
   const getRank = (amount: number) => {
     if (amount >= 10000000) return { title: "妄想の創造神", color: "text-yellow-600" };
     if (amount >= 1000000) return { title: "妄想石油王", color: "text-purple-500" };
@@ -182,17 +185,16 @@ export default function KattaTsumoriApp() {
   };
   const currentRank = getRank(lifetimeAmount);
 
+  // ▼ バナーの切り替えを activeBanners ベースに変更
   useEffect(() => {
-    if (view !== "SHOP") return;
-    const timer = setInterval(() => { setCurrentBanner((prev) => (prev + 1) % AD_BANNERS.length); }, 4000);
+    if (view !== "SHOP" || activeBanners.length === 0) return;
+    const timer = setInterval(() => { setCurrentBanner((prev) => (prev + 1) % activeBanners.length); }, 4000);
     return () => clearInterval(timer);
-  }, [view]);
+  }, [view, activeBanners.length]);
 
-  // ▼ トレンド商品の自動パーソナライズ機能
   useEffect(() => {
     const fetchTrending = async () => {
       try {
-        // 設定された年齢・性別に応じて、取得するトレンド商品を裏で変える
         let trendKeyword = "高級時計"; 
         if (ageGroup || gender) {
            const ageStr = ageGroup ? ageGroup.replace("以上", "") : "";
@@ -220,13 +222,11 @@ export default function KattaTsumoriApp() {
     fetchTrending();
   }, [ageGroup, gender]);
 
-  // ▼ 通常検索の自動パーソナライズ機能
   const fetchRakutenItems = async (keyword: string, page: number, reset: boolean, sort: string, limitPrice: number) => {
     if (reset) setIsLoadingMain(true); else setIsLoadingMore(true);
     try {
       let queryKeyword = keyword;
 
-      // 抽象的なカテゴリやデフォルト検索の時だけ、裏で年齢と性別を付加して最適化！
       const abstractKeywords = ["人気", "ファッション", "コスメ", "日用品", APP_CONFIG.defaultSearchKeyword];
       if ((ageGroup || gender) && abstractKeywords.includes(keyword)) {
         const ageStr = ageGroup ? ageGroup.replace("以上", "") : "";
@@ -320,7 +320,6 @@ export default function KattaTsumoriApp() {
     setPaymentError(""); setView("CONFIRM");
   };
 
-  // ▼ 個別の購入履歴を削除する処理
   const handleDeleteOrder = (orderId: string) => {
     if (window.confirm("この妄想履歴を削除しますか？\n（※全世界売上への貢献額はキープされます）")) {
       const updatedHistory = orderHistory.filter(o => o.id !== orderId);
@@ -351,6 +350,8 @@ export default function KattaTsumoriApp() {
         setLifetimeAmount(newLifetimeAmt); setLifetimeOrders(newLifetimeOrd);
         localStorage.setItem("kattatsumori_lifetimeAmt", String(newLifetimeAmt));
         localStorage.setItem("kattatsumori_lifetimeOrd", String(newLifetimeOrd));
+
+        setGlobalSales(prev => prev + totalAmount);
 
         if (userId) {
           const { data: orderData } = await supabase.from('orders').insert([{ user_id: userId, total_amount: totalAmount }]).select().single();
@@ -387,15 +388,18 @@ export default function KattaTsumoriApp() {
 
         <div className="mt-4 px-6 text-xs text-gray-400 font-bold uppercase tracking-wider">インフォメーション</div>
         <div className="space-y-1 px-3 mt-2">
-          <button onClick={() => { setView("HOWTO"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><HelpCircle className="w-5 h-5" /> 使い方</button>
-          <button onClick={() => { setView("TERMS"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><FileText className="w-5 h-5" /> 利用規約</button>
-          <button onClick={() => { setView("PRIVACY"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><ShieldCheck className="w-5 h-5" /> プライバシーポリシー</button>
-          <button onClick={() => { setView("CONTACT"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><Mail className="w-5 h-5" /> お問い合わせ・広告掲載</button>
+          <button onClick={() => { setView("PWA"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700 text-left leading-snug">
+            <Smartphone className="w-5 h-5 shrink-0" /> ホーム画面追加方法
+          </button>
+          <button onClick={() => { setView("HOWTO"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><HelpCircle className="w-5 h-5 shrink-0" /> 使い方ガイド</button>
+          <button onClick={() => { setView("TERMS"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><FileText className="w-5 h-5 shrink-0" /> 利用規約</button>
+          <button onClick={() => { setView("PRIVACY"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><ShieldCheck className="w-5 h-5 shrink-0" /> プライバシーポリシー</button>
+          <button onClick={() => { setView("CONTACT"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><Mail className="w-5 h-5 shrink-0" /> お問い合わせ・広告掲載</button>
         </div>
         
         <div className="mt-8 px-6 text-xs text-gray-400 font-bold uppercase tracking-wider">設定とサポート</div>
         <div className="space-y-1 px-3 mt-2">
-          <button className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><Settings className="w-5 h-5" /> アカウント設定</button>
+          <button className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><Settings className="w-5 h-5 shrink-0" /> アカウント設定</button>
           <ZucksAd type="rectangle" />
           <button onClick={handleResetHistory} className="w-full flex items-center justify-center py-2 px-3 rounded-xl hover:bg-red-50 transition text-red-400 hover:text-red-500 text-xs font-medium">妄想履歴をリセット</button>
         </div>
@@ -406,7 +410,10 @@ export default function KattaTsumoriApp() {
   const renderStaticPage = (title: string, content: string) => (
     <div className="p-6 animate-in fade-in slide-in-from-right-4 pb-12">
       <h2 className="text-2xl font-bold text-gray-900 mb-6 pb-2 border-b border-gray-200">{title}</h2>
-      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm whitespace-pre-wrap text-sm text-gray-700 leading-loose">{content}</div>
+      <div 
+        className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm text-sm text-gray-700 leading-loose [&>img]:w-full [&>img]:rounded-lg [&>img]:my-4 [&>h3]:font-bold [&>h3]:mt-6 [&>h3]:mb-2 [&>h3]:text-red-600 [&>p]:mb-4"
+        dangerouslySetInnerHTML={{ __html: content }} 
+      />
     </div>
   );
 
@@ -457,6 +464,8 @@ export default function KattaTsumoriApp() {
           {view === "PRIVACY" && renderStaticPage(cmsPages["privacy"]?.title || PAGE_CONTENT.privacy.title, cmsPages["privacy"]?.content || PAGE_CONTENT.privacy.content)}
           {view === "TERMS" && renderStaticPage(cmsPages["terms"]?.title || PAGE_CONTENT.terms.title, cmsPages["terms"]?.content || PAGE_CONTENT.terms.content)}
           {view === "CONTACT" && renderStaticPage(cmsPages["contact"]?.title || PAGE_CONTENT.contact.title, cmsPages["contact"]?.content || PAGE_CONTENT.contact.content)}
+          
+          {view === "PWA" && renderStaticPage(cmsPages["pwa"]?.title || "ホーム画面追加方法", cmsPages["pwa"]?.content || "現在準備中です。")}
 
           {view === "SHOP" && (
             <div className="p-4 animate-in fade-in flex-1">
@@ -466,20 +475,39 @@ export default function KattaTsumoriApp() {
                 <div className="relative z-10 w-full">
                   <div className="flex items-center justify-center gap-2 text-red-400 font-black tracking-widest text-xs mb-2"><Globe className="w-4 h-4" /><span>カッタツモリ 全世界累計妄想売上</span><Globe className="w-4 h-4" /></div>
                   <div className="flex items-baseline justify-center gap-1 font-black">
-                    <span className="text-3xl text-red-200 drop-shadow-md">¥</span><span className="text-5xl tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white via-red-100 to-red-500 drop-shadow-[0_0_15px_rgba(220,38,38,0.5)]">{currentGlobalSales.toLocaleString()}</span>
+                    <span className="text-3xl text-red-200 drop-shadow-md">¥</span><span className="text-5xl tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white via-red-100 to-red-500 drop-shadow-[0_0_15px_rgba(220,38,38,0.5)]">{globalSales.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
 
-              <div id="dsp-ad-spot" className="relative w-full h-28 mb-6 rounded-2xl overflow-hidden shadow-sm border border-gray-100 bg-gray-100">
-                {AD_BANNERS.map((banner, index) => (
-                  <div key={banner.id} className={`absolute inset-0 transition-opacity duration-700 ${currentBanner === index ? 'opacity-100 z-10' : 'opacity-0 z-0'} ${banner.bgClass} flex flex-col justify-center items-center text-white text-center px-4`}>
-                    <p className="text-[10px] font-bold tracking-widest mb-1 border border-white/50 px-2 py-0.5 rounded-full bg-black/20">{banner.label}</p>
-                    <h3 className="text-lg font-black">{banner.title}</h3>
-                    <p className="text-xs text-white/90 font-medium mt-1">{banner.subtitle}</p>
-                  </div>
-                ))}
-              </div>
+              {/* ▼ isActiveに対応＆画像バナー・リンクに対応！ */}
+              {activeBanners.length > 0 && (
+                <div id="dsp-ad-spot" className="relative w-full h-28 mb-6 rounded-2xl overflow-hidden shadow-sm border border-gray-100 bg-gray-100">
+                  {activeBanners.map((banner: any, index: number) => {
+                    const content = banner.imageUrl ? (
+                      <img src={banner.imageUrl} alt={banner.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className={`w-full h-full flex flex-col justify-center items-center text-white text-center px-4 ${banner.bgClass}`}>
+                        <p className="text-[10px] font-bold tracking-widest mb-1 border border-white/50 px-2 py-0.5 rounded-full bg-black/20">{banner.label}</p>
+                        <h3 className="text-lg font-black">{banner.title}</h3>
+                        <p className="text-xs text-white/90 font-medium mt-1">{banner.subtitle}</p>
+                      </div>
+                    );
+
+                    return (
+                      <div key={banner.id} className={`absolute inset-0 transition-opacity duration-700 ${currentBanner === index ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}>
+                        {banner.link ? (
+                          <a href={banner.link} target="_blank" rel="noopener noreferrer" className="block w-full h-full cursor-pointer">
+                            {content}
+                          </a>
+                        ) : (
+                          <div className="w-full h-full">{content}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {trendingItems.length > 0 && (
                 <div className="mb-6 -mx-4 pl-4">
@@ -693,7 +721,6 @@ export default function KattaTsumoriApp() {
                             <span className="text-xs text-gray-500">{order.date}</span>
                             <span className="text-[10px] font-bold bg-red-50 text-red-700 px-2 py-0.5 rounded">妄想完了</span>
                           </div>
-                          {/* ▼ 個別削除ボタン（ゴミ箱アイコン） */}
                           <button onClick={() => handleDeleteOrder(order.id)} className="p-1 hover:bg-red-50 rounded transition group">
                             <Trash2 className="w-4 h-4 text-gray-300 group-hover:text-red-500 transition" />
                           </button>
@@ -890,6 +917,7 @@ export default function KattaTsumoriApp() {
           {view !== "LOADING" && (
             <footer className="border-t border-gray-200 bg-gray-50 py-10 px-4 mt-auto">
               <div className="flex flex-wrap justify-center gap-x-6 gap-y-3 text-xs font-medium text-gray-600 mb-8">
+                <button onClick={() => { setView("PWA"); window.scrollTo(0,0); }} className="hover:text-red-600 transition">ホーム画面追加方法</button>
                 <button onClick={() => { setView("HOWTO"); window.scrollTo(0,0); }} className="hover:text-red-600 transition">使い方ガイド</button>
                 <button onClick={() => { setView("CONTACT"); window.scrollTo(0,0); }} className="hover:text-red-600 transition">お問い合わせ</button>
                 <button onClick={() => { setView("TERMS"); window.scrollTo(0,0); }} className="hover:text-red-600 transition">利用規約</button>

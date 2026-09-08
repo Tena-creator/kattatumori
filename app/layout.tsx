@@ -21,6 +21,8 @@ export const metadata: Metadata = {
     shortcut: "/favicon.png",
     apple: "/apple-icon.png",
   },
+  manifest: "/manifest.json",
+  themeColor: "#ffffff",
   // ▼ アドセンスの審査用メタタグ
   other: {
     "google-adsense-account": "ca-pub-7372592854852772",
