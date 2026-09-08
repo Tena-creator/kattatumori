@@ -80,7 +80,6 @@ export default function KattaTsumoriApp() {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [globalSales, setGlobalSales] = useState<number>(APP_CONFIG.globalBaseSales);
 
-  // ▼ isActiveがtrueのものだけを抽出する処理！
   const activeBanners = AD_BANNERS ? AD_BANNERS.filter((b: any) => b.isActive) : [];
 
   useEffect(() => {
@@ -185,7 +184,6 @@ export default function KattaTsumoriApp() {
   };
   const currentRank = getRank(lifetimeAmount);
 
-  // ▼ バナーの切り替えを activeBanners ベースに変更
   useEffect(() => {
     if (view !== "SHOP" || activeBanners.length === 0) return;
     const timer = setInterval(() => { setCurrentBanner((prev) => (prev + 1) % activeBanners.length); }, 4000);
@@ -480,17 +478,24 @@ export default function KattaTsumoriApp() {
                 </div>
               </div>
 
-              {/* ▼ isActiveに対応＆画像バナー・リンクに対応！ */}
               {activeBanners.length > 0 && (
-                <div id="dsp-ad-spot" className="relative w-full h-28 mb-6 rounded-2xl overflow-hidden shadow-sm border border-gray-100 bg-gray-100">
+                <div id="dsp-ad-spot" className="relative w-full aspect-[3/1] mb-6 shadow-sm bg-gray-50">
                   {activeBanners.map((banner: any, index: number) => {
                     const content = banner.imageUrl ? (
-                      <img src={banner.imageUrl} alt={banner.title} className="w-full h-full object-cover" />
+                      <div className="relative w-full h-full">
+                        <img src={banner.imageUrl} alt={banner.title || "PR広告"} className="w-full h-full object-cover" />
+                        <div className="absolute top-0 right-0 bg-white/60 text-gray-500 text-[9px] font-bold px-1.5 py-0.5 z-10">
+                          PR
+                        </div>
+                      </div>
                     ) : (
                       <div className={`w-full h-full flex flex-col justify-center items-center text-white text-center px-4 ${banner.bgClass}`}>
                         <p className="text-[10px] font-bold tracking-widest mb-1 border border-white/50 px-2 py-0.5 rounded-full bg-black/20">{banner.label}</p>
                         <h3 className="text-lg font-black">{banner.title}</h3>
                         <p className="text-xs text-white/90 font-medium mt-1">{banner.subtitle}</p>
+                        <div className="absolute top-0 right-0 bg-white/60 text-gray-500 text-[9px] font-bold px-1.5 py-0.5 z-10">
+                          PR
+                        </div>
                       </div>
                     );
 
