@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next"; // ← ★ Viewport を追加！
 import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
@@ -13,6 +13,11 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// ▼ これを新しく追加！
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
+};
+
 export const metadata: Metadata = {
   title: "カッタツモリ | 妄想通販プラットフォーム",
   description: "日本最大級の妄想通販サイト。ストレス発散にどうぞ！実際にはお金は減りません。",
@@ -22,12 +27,13 @@ export const metadata: Metadata = {
     apple: "/apple-icon.png",
   },
   manifest: "/manifest.json",
-  themeColor: "#ffffff",
-  // ▼ アドセンスの審査用メタタグ
+  // themeColor: "#ffffff", ← ★ ここにあった themeColor を削除！
   other: {
     "google-adsense-account": "ca-pub-7372592854852772",
   },
 };
+
+// ... 以下はそのまま（RootLayout関数など）...
 
 export default function RootLayout({
   children,
