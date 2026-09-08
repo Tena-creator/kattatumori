@@ -1,13 +1,12 @@
 export const AD_BANNERS = [
   { 
     id: 1, 
-    isActive: false, // ← trueで表示、falseで非表示（ON/OFF）
-    label: "キャンペーン", 
-    title: "楽天スーパーSALE 開催中！", 
-    subtitle: "ショップ買いまわりでポイント最大47.5倍", 
-    bgClass: "bg-gradient-to-r from-red-600 to-red-800",
-    imageUrl: "", // 画像バナーにする場合はここにURLを入れる（例: "https://..."）
-    link: ""      // タップした時の飛び先アフィリエイトリンク
+    isActive: true, // ← trueで表示、falseで非表示（ON/OFF）
+    label: "広告", 
+    title: "外部サイトはお金かかるから注意してください", 
+    subtitle: "",
+    imageUrl: "https://ad.jp.ap.valuecommerce.com/servlet/gifbanner?sid=3779243&pid=892694451", // 画像バナーにする場合はここにURLを入れる（例: "https://..."）
+    link: "https://ck.jp.ap.valuecommerce.com/servlet/referral?sid=3779243&pid=892694451"      // タップした時の飛び先アフィリエイトリンク
   },
   { 
     id: 2, 
