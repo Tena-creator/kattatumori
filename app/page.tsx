@@ -8,17 +8,16 @@ import {
   HelpCircle, Mail, FileText, ChevronDown, ChevronUp
 } from "lucide-react";
 
-// ▼ 分割した設定ファイル・型定義をインポート
 import { Item, Order, ViewState } from "./types";
 import { APP_CONFIG } from "./config/app";
 import { AD_BANNERS } from "./config/ads";
 import { PAGE_CONTENT } from "./config/pages";
 import { ALL_CATEGORIES } from "./config/categories";
 
-// ▼ 分割したコンポーネントをインポート
 import Header from "./components/Header";
 import BottomNav from "./components/BottomNav";
 import ProductCard from "./components/ProductCard";
+import ZucksAd from "./components/ZucksAd"; 
 
 export default function KattaTsumoriApp() {
   const [view, setView] = useState<ViewState>("SHOP");
@@ -39,7 +38,6 @@ export default function KattaTsumoriApp() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   
   const [sortOrder, setSortOrder] = useState("standard");
-  // ▼ スライダー初期値を 30000 -> 0（指定なし）にして高額商品が弾かれるのを防止
   const [maxPrice, setMaxPrice] = useState(0);
   const [sliderValue, setSliderValue] = useState(30000);
 
@@ -59,7 +57,6 @@ export default function KattaTsumoriApp() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [currentBanner, setCurrentBanner] = useState(0);
 
-  // ローカルストレージから履歴を復元
   useEffect(() => {
     const savedHistory = localStorage.getItem("kattatsumori_orderHistory");
     const savedLifetimeAmt = localStorage.getItem("kattatsumori_lifetimeAmt");
@@ -83,7 +80,6 @@ export default function KattaTsumoriApp() {
   };
   const currentRank = getRank(lifetimeAmount);
 
-  // 広告バナーの自動ローテーション
   useEffect(() => {
     if (view !== "SHOP") return;
     const timer = setInterval(() => {
@@ -92,7 +88,6 @@ export default function KattaTsumoriApp() {
     return () => clearInterval(timer);
   }, [view]);
 
-  // さっき買われた商品（トレンド）の取得
   useEffect(() => {
     const fetchTrending = async () => {
       try {
@@ -122,7 +117,6 @@ export default function KattaTsumoriApp() {
     fetchTrending();
   }, []);
 
-  // メイン商品の取得
   const fetchRakutenItems = async (keyword: string, page: number, reset: boolean, sort: string, limitPrice: number) => {
     if (reset) setIsLoadingMain(true);
     else setIsLoadingMore(true);
@@ -166,7 +160,6 @@ export default function KattaTsumoriApp() {
 
   useEffect(() => { fetchRakutenItems(currentKeyword, 1, true, sortOrder, maxPrice); }, []);
 
-  // 無限スクロール
   useEffect(() => {
     const handleScroll = () => {
       if (view !== "SHOP") return;
@@ -182,7 +175,6 @@ export default function KattaTsumoriApp() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [isLoadingMain, isLoadingMore, currentPage, currentKeyword, items.length, view, sortOrder, maxPrice]);
 
-  // ▼ カテゴリ選択時に商品リストの上部へスクロールする処理に修正
   const handleQuickCategory = (keyword: string) => {
     setCurrentKeyword(keyword);
     setSearchInput(""); 
@@ -192,7 +184,6 @@ export default function KattaTsumoriApp() {
     setTimeout(() => {
       const element = document.getElementById("product-list-top");
       if (element) {
-        // ヘッダーの高さ分（約80px）を引いて見やすく調整
         const y = element.getBoundingClientRect().top + window.scrollY - 80;
         window.scrollTo({ top: y, behavior: 'smooth' });
       }
@@ -244,6 +235,13 @@ export default function KattaTsumoriApp() {
     setPaymentError(""); setView("CONFIRM");
   };
 
+  const handleResetHistory = () => {
+    if (window.confirm("購入履歴をすべて消去しますか？\n（※全世界売上への貢献額はキープされます！）")) {
+      localStorage.removeItem("kattatsumori_orderHistory");
+      setOrderHistory([]);
+    }
+  };
+
   const totalAmount = cart.reduce((sum, item) => sum + item.price, 0);
 
   useEffect(() => {
@@ -279,13 +277,6 @@ export default function KattaTsumoriApp() {
           <button onClick={() => { setView("SHOP"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 px-3 py-3 rounded-xl transition ${view === 'SHOP' ? 'bg-red-50 text-red-600 font-bold' : 'hover:bg-gray-100 text-gray-700'}`}><Home className="w-5 h-5" /> ホーム</button>
           <button onClick={() => { setView("MYPAGE"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 px-3 py-3 rounded-xl transition ${view === 'MYPAGE' ? 'bg-red-50 text-red-600 font-bold' : 'hover:bg-gray-100 text-gray-700'}`}><User className="w-5 h-5" /> マイページ</button>
         </div>
-        
-        {/* Zucks広告枠 (ハンバーガーメニュー内) のプレースホルダー */}
-        <div className="px-4 py-4 my-2">
-           <div className="w-full h-[250px] bg-gray-100 flex items-center justify-center border border-dashed border-gray-300 rounded-xl text-gray-400 text-sm">
-             [広告枠] 300x250
-           </div>
-        </div>
 
         <div className="mt-4 px-6 text-xs text-gray-400 font-bold uppercase tracking-wider">インフォメーション</div>
         <div className="space-y-1 px-3 mt-2">
@@ -294,10 +285,14 @@ export default function KattaTsumoriApp() {
           <button onClick={() => { setView("PRIVACY"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><ShieldCheck className="w-5 h-5" /> プライバシーポリシー</button>
           <button onClick={() => { setView("CONTACT"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><Mail className="w-5 h-5" /> お問い合わせ・広告掲載</button>
         </div>
+        
         <div className="mt-8 px-6 text-xs text-gray-400 font-bold uppercase tracking-wider">設定とサポート</div>
         <div className="space-y-1 px-3 mt-2">
           <button className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><Settings className="w-5 h-5" /> アカウント設定</button>
-          <button onClick={() => { if (window.confirm("購入履歴をすべて消去しますか？\n（※全世界売上への貢献額はキープされます！）")) { localStorage.removeItem("kattatsumori_orderHistory"); setOrderHistory([]); } }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-red-50 transition text-red-500 text-sm mt-4">妄想履歴をリセット</button>
+          
+          <ZucksAd type="rectangle" />
+
+          <button onClick={handleResetHistory} className="w-full flex items-center justify-center py-2 px-3 rounded-xl hover:bg-red-50 transition text-red-400 hover:text-red-500 text-xs font-medium">妄想履歴をリセット</button>
         </div>
       </div>
     </div>
@@ -331,7 +326,6 @@ export default function KattaTsumoriApp() {
           </div>
         )}
 
-        {/* 下からスッと出てくるカテゴリメニュー（BottomSheet） */}
         {isBottomCategoryOpen && (
           <div className="fixed inset-0 z-[100] lg:hidden flex items-end">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsBottomCategoryOpen(false)}></div>
@@ -351,7 +345,6 @@ export default function KattaTsumoriApp() {
           </div>
         )}
 
-        {/* ヘッダーコンポーネント */}
         <Header view={view} setView={setView} setIsMenuOpen={setIsMenuOpen} />
 
         <div className="flex-1 flex flex-col">
@@ -373,7 +366,6 @@ export default function KattaTsumoriApp() {
                 </div>
               </div>
 
-              {/* DSP広告枠 (自社バナー等のモック枠) */}
               <div id="dsp-ad-spot" className="relative w-full h-28 mb-6 rounded-2xl overflow-hidden shadow-sm border border-gray-100 bg-gray-100">
                 {AD_BANNERS.map((banner, index) => (
                   <div key={banner.id} className={`absolute inset-0 transition-opacity duration-700 ${currentBanner === index ? 'opacity-100 z-10' : 'opacity-0 z-0'} ${banner.bgClass} flex flex-col justify-center items-center text-white text-center px-4`}>
@@ -384,7 +376,6 @@ export default function KattaTsumoriApp() {
                 ))}
               </div>
 
-              {/* トレンド商品横スクロール */}
               {trendingItems.length > 0 && (
                 <div className="mb-6 -mx-4 pl-4">
                   <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2"><Clock className="w-4 h-4 text-red-600" /> さっき誰かが妄想決済した商品</h3>
@@ -435,15 +426,7 @@ export default function KattaTsumoriApp() {
                 )}
               </div>
 
-              {/* ▼ カテゴリ選択時のスクロール着地点（このIDの場所へ移動します） */}
               <div id="product-list-top"></div>
-
-              {/* Zucks広告枠 (TOP 予算バーの上) のプレースホルダー */}
-              <div className="w-full flex justify-center mb-6">
-                 <div className="w-[300px] h-[250px] bg-gray-100 flex items-center justify-center border border-dashed border-gray-300 rounded-xl text-gray-400 text-sm">
-                   [広告枠] 300x250
-                 </div>
-              </div>
 
               <div className="flex flex-col gap-3 mb-6">
                 {!isLoadingMain && items.length > 0 && (
@@ -477,7 +460,12 @@ export default function KattaTsumoriApp() {
                   ) : (
                     <div className="space-y-4">
                       {items.map((item, index) => (
-                        <ProductCard key={`${item.id}-${index}`} item={item} onClick={() => { setSelectedItem(item); setView("DETAIL"); }} />
+                        <React.Fragment key={`${item.id}-${index}`}>
+                          <ProductCard item={item} onClick={() => { setSelectedItem(item); setView("DETAIL"); }} />
+                          {(index + 1) % 30 === 0 && (
+                            <ZucksAd type="banner" />
+                          )}
+                        </React.Fragment>
                       ))}
                     </div>
                   )}
@@ -488,7 +476,7 @@ export default function KattaTsumoriApp() {
           )}
 
           {view === "MYPAGE" && (
-            <div className="space-y-6 p-4 animate-in fade-in pb-12">
+            <div className="space-y-6 p-4 animate-in fade-in pb-12 flex flex-col h-full">
               <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm space-y-6 relative overflow-hidden">
                 <div className="absolute -top-10 -right-10 w-32 h-32 bg-red-50 rounded-full blur-2xl"></div>
                 <div className="flex items-center gap-4 relative z-10">
@@ -511,13 +499,27 @@ export default function KattaTsumoriApp() {
                 ) : (
                   <div className="space-y-4">
                     {orderHistory.map((order) => (
-                      <div key={order.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 shadow-sm">
-                        <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                      <div key={order.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-3">
                           <span className="text-xs text-gray-500">{order.date}</span><span className="text-xs font-bold bg-red-50 text-red-700 px-2 py-1 rounded">妄想完了</span>
                         </div>
-                        <div className="flex gap-2 overflow-x-auto py-1 scrollbar-hide">
-                          {order.items.map((item, i) => (<div key={i} className="relative w-16 h-16 shrink-0"><img src={item.image} className="w-full h-full rounded-md object-cover border border-gray-200" /></div>))}
+                        
+                        {/* ▼ マイページ内で商品ごとの詳細とアフィリエイトリンクを展開 */}
+                        <div className="space-y-3 mb-3">
+                          {order.items.map((item, i) => (
+                            <div key={i} className="flex gap-3 items-center">
+                              <img src={item.image} className="w-12 h-12 shrink-0 rounded-md object-cover border border-gray-200 bg-gray-50" />
+                              <div className="flex-1 overflow-hidden">
+                                <p className="text-xs text-gray-800 truncate mb-1">{item.name}</p>
+                                <div className="flex gap-2">
+                                  <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-[#BF0000] text-white px-2 py-1 rounded font-bold hover:bg-red-700 transition flex items-center gap-1 shadow-sm"><ShoppingBag className="w-3 h-3"/>楽天で見る</a>
+                                  <a href={`https://www.amazon.co.jp/s?k=${encodeURIComponent(item.name)}${APP_CONFIG.affiliate.amazonTag ? `&tag=${APP_CONFIG.affiliate.amazonTag}` : ""}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-gray-800 text-white px-2 py-1 rounded font-bold hover:bg-gray-900 transition flex items-center gap-1 shadow-sm"><Package className="w-3 h-3"/>Amazon</a>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
+
                         <div className="flex justify-between items-end pt-2 border-t border-gray-100">
                           <span className="text-sm text-gray-500">{order.items.length}点の商品</span><span className="font-bold text-gray-900">合計: <span className="text-red-600 text-lg">¥{order.total.toLocaleString()}</span></span>
                         </div>
@@ -527,11 +529,11 @@ export default function KattaTsumoriApp() {
                 )}
               </div>
               
-              {/* Zucks広告枠 (マイページ、購入履歴の下) のプレースホルダー */}
-              <div className="w-full flex justify-center py-4 border-t border-gray-200 mt-6">
-                 <div className="w-[300px] h-[250px] bg-gray-100 flex items-center justify-center border border-dashed border-gray-300 rounded-xl text-gray-400 text-sm">
-                   [広告枠] 300x250
-                 </div>
+              <div className="mt-auto pt-8 flex flex-col items-center">
+                <ZucksAd type="rectangle" />
+                <button onClick={handleResetHistory} className="text-xs text-red-400 hover:text-red-500 hover:underline transition mt-2 py-2">
+                  妄想履歴をリセット
+                </button>
               </div>
             </div>
           )}
@@ -556,28 +558,27 @@ export default function KattaTsumoriApp() {
           )}
 
           {view === "CART" && (
-            <div className="space-y-6 p-4 animate-in fade-in slide-in-from-right-4 pb-12">
-              <h2 className="text-2xl font-bold text-gray-900">買い物かご</h2>
-              {cart.length === 0 ? (
-                <div className="text-center py-20 bg-gray-50 rounded-2xl border border-gray-200"><ShoppingBag className="w-16 h-16 text-gray-300 mx-auto mb-4" /><p className="text-gray-500">かごは空です</p><button onClick={() => setView("SHOP")} className="mt-6 px-8 py-3 bg-gray-800 rounded-full text-sm text-white font-medium hover:bg-gray-700 active:scale-95 transition">買い物を続ける</button></div>
-              ) : (
-                <div className="space-y-4">
-                  {cart.map((item, i) => (
-                    <div key={i} className="flex gap-4 items-center bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
-                      <img src={item.image} className="w-20 h-20 object-cover rounded-lg shrink-0 bg-gray-50" />
-                      <div className="flex-1 flex flex-col justify-between h-20"><span className="font-medium text-sm line-clamp-2 text-gray-900">{item.name}</span><div className="text-red-600 font-bold text-lg">¥{item.price.toLocaleString()}</div></div>
-                    </div>
-                  ))}
-                  <div className="flex justify-between items-end pt-4 border-t border-gray-200 mt-6 px-2"><span className="text-gray-500 font-medium">合計</span><span className="text-red-600 font-bold text-3xl">¥{totalAmount.toLocaleString()}</span></div>
-                  <button onClick={() => setView("ADDRESS")} className="w-full bg-red-600 text-white py-4 rounded-xl font-bold text-lg mt-4 shadow-lg shadow-red-500/30 active:scale-95 transition">ご購入手続きへ</button>
-                </div>
-              )}
+            <div className="space-y-6 p-4 animate-in fade-in slide-in-from-right-4 pb-12 flex flex-col h-full">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">買い物かご</h2>
+                {cart.length === 0 ? (
+                  <div className="text-center py-20 bg-gray-50 rounded-2xl border border-gray-200"><ShoppingBag className="w-16 h-16 text-gray-300 mx-auto mb-4" /><p className="text-gray-500">かごは空です</p><button onClick={() => setView("SHOP")} className="mt-6 px-8 py-3 bg-gray-800 rounded-full text-sm text-white font-medium hover:bg-gray-700 active:scale-95 transition">買い物を続ける</button></div>
+                ) : (
+                  <div className="space-y-4">
+                    {cart.map((item, i) => (
+                      <div key={i} className="flex gap-4 items-center bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+                        <img src={item.image} className="w-20 h-20 object-cover rounded-lg shrink-0 bg-gray-50" />
+                        <div className="flex-1 flex flex-col justify-between h-20"><span className="font-medium text-sm line-clamp-2 text-gray-900">{item.name}</span><div className="text-red-600 font-bold text-lg">¥{item.price.toLocaleString()}</div></div>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-end pt-4 border-t border-gray-200 mt-6 px-2"><span className="text-gray-500 font-medium">合計</span><span className="text-red-600 font-bold text-3xl">¥{totalAmount.toLocaleString()}</span></div>
+                    <button onClick={() => setView("ADDRESS")} className="w-full bg-red-600 text-white py-4 rounded-xl font-bold text-lg mt-4 shadow-lg shadow-red-500/30 active:scale-95 transition">ご購入手続きへ</button>
+                  </div>
+                )}
+              </div>
 
-              {/* Zucks広告枠 (カートの下部) のプレースホルダー */}
-              <div className="w-full flex justify-center py-4 border-t border-gray-200 mt-6">
-                 <div className="w-[300px] h-[250px] bg-gray-100 flex items-center justify-center border border-dashed border-gray-300 rounded-xl text-gray-400 text-sm">
-                   [広告枠] 300x250
-                 </div>
+              <div className="mt-auto pt-8">
+                <ZucksAd type="rectangle" />
               </div>
             </div>
           )}
@@ -648,48 +649,43 @@ export default function KattaTsumoriApp() {
           )}
 
           {view === "RESULT" && (
-            <div className="space-y-8 py-16 p-4 text-center animate-in fade-in zoom-in duration-500 pb-12">
-              <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-200"><ShieldCheck className="w-10 h-10 text-emerald-600" /></div>
-              <h2 className="text-4xl font-black text-gray-900 tracking-widest mb-2">注文完了</h2>
-              <p className="text-sm text-gray-500 mb-6">※これは妄想です。実際には商品は届かず、お金も減りません。</p>
+            <div className="space-y-8 py-16 p-4 text-center animate-in fade-in zoom-in duration-500 pb-12 flex flex-col h-full">
+              <div>
+                <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-200"><ShieldCheck className="w-10 h-10 text-emerald-600" /></div>
+                <h2 className="text-4xl font-black text-gray-900 tracking-widest mb-2">注文完了</h2>
+                <p className="text-sm text-gray-500 mb-6">※これは妄想です。実際には商品は届かず、お金も減りません。</p>
 
-              {orderHistory[0]?.payMethod === 'convenience' && (
-                <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">コンビニ払込票番号（架空）</p><p className="text-3xl font-black text-gray-900 tracking-widest text-center my-4">9876-5432-1098</p><p className="text-gray-500 text-xs">お近くの架空のコンビニエンスストアのレジにて、上記の番号をお伝えいただき、架空の現金でお支払いください。</p></div>
-              )}
-              {orderHistory[0]?.payMethod === 'bank_transfer' && (
-                <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-3 border-b border-gray-300 pb-2">お振込先口座（架空）</p><div className="space-y-1 text-gray-700 font-medium"><p>妄想銀行 (0000)</p><p>エアブランチ支店 (123)</p><p>普通 <span className="font-bold text-lg tracking-wider">1234567</span></p><p>カ）カッタツモリ</p></div><p className="text-red-500 font-bold text-xs mt-3">※絶対に振り込まないでください。</p></div>
-              )}
-              {orderHistory[0]?.payMethod === 'cash_on_delivery' && (
-                <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">商品到着時のお願い</p><p className="text-gray-700">商品（架空）の到着時に、配達員（架空）へ代金 <strong className="text-lg text-red-600">¥{orderHistory[0]?.total.toLocaleString()}</strong> を架空の現金でお支払いください。</p></div>
-              )}
+                {orderHistory[0]?.payMethod === 'convenience' && (
+                  <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">コンビニ払込票番号（架空）</p><p className="text-3xl font-black text-gray-900 tracking-widest text-center my-4">9876-5432-1098</p><p className="text-gray-500 text-xs">お近くの架空のコンビニエンスストアのレジにて、上記の番号をお伝えいただき、架空の現金でお支払いください。</p></div>
+                )}
+                {orderHistory[0]?.payMethod === 'bank_transfer' && (
+                  <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-3 border-b border-gray-300 pb-2">お振込先口座（架空）</p><div className="space-y-1 text-gray-700 font-medium"><p>妄想銀行 (0000)</p><p>エアブランチ支店 (123)</p><p>普通 <span className="font-bold text-lg tracking-wider">1234567</span></p><p>カ）カッタツモリ</p></div><p className="text-red-500 font-bold text-xs mt-3">※絶対に振り込まないでください。</p></div>
+                )}
+                {orderHistory[0]?.payMethod === 'cash_on_delivery' && (
+                  <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">商品到着時のお願い</p><p className="text-gray-700">商品（架空）の到着時に、配達員（架空）へ代金 <strong className="text-lg text-red-600">¥{orderHistory[0]?.total.toLocaleString()}</strong> を架空の現金でお支払いください。</p></div>
+                )}
 
-              <div className="pt-4 space-y-4">
-                <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg">オススメ</div>
-                  <p className="text-sm text-gray-700 mb-4 font-bold">＼ 実際に欲しくなった方はこちら ／</p>
-                  
-                  {/* タイポ修正: items[0].url */}
-                  <a href={orderHistory.length > 0 && orderHistory[0].items.length > 0 ? orderHistory[0].items[0].url : "#"} target="_blank" rel="noopener noreferrer" className="w-full bg-[#BF0000] hover:bg-red-700 text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition shadow-lg active:scale-95 mb-3">
-                    <ShoppingBag className="w-6 h-6" />本物を楽天で購入する
-                  </a>
-
-                  {/* Amazonアフィリエイトへの動的リンク設定 */}
-                  <a href={orderHistory.length > 0 && orderHistory[0].items.length > 0 ? `https://www.amazon.co.jp/s?k=${encodeURIComponent(orderHistory[0].items[0].name)}${APP_CONFIG.affiliate.amazonTag ? `&tag=${APP_CONFIG.affiliate.amazonTag}` : ""}` : "https://www.amazon.co.jp/"} target="_blank" rel="noopener noreferrer" className="w-full bg-gray-800 hover:bg-gray-900 text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition shadow-lg active:scale-95">
-                    <Package className="w-6 h-6" />Amazonで探してみる
-                  </a>
+                {/* ▼ 「実際に欲しくなった方へ」を控えめな案内文へ変更 */}
+                <div className="pt-4 space-y-4">
+                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 text-left">
+                    <p className="text-sm text-gray-800 mb-3 font-bold">＼ 実際に欲しくなった方は ／</p>
+                    <p className="text-xs text-gray-600 leading-relaxed mb-5">
+                      マイページの「購入履歴」を開くと、妄想した各商品を実際のショップ（楽天・Amazon）で確認・購入することができます。
+                    </p>
+                    
+                    <button onClick={() => { setView("MYPAGE"); window.scrollTo(0,0); }} className="w-full bg-white border border-gray-300 text-gray-700 py-3.5 rounded-xl font-bold text-sm hover:bg-gray-100 transition active:scale-95 flex items-center justify-center gap-2 shadow-sm">
+                      <User className="w-5 h-5 text-gray-400" /> マイページへ移動する
+                    </button>
+                  </div>
                 </div>
               </div>
               
-              {/* Zucks広告枠 (決済完了画面の下) のプレースホルダー */}
-              <div className="w-full flex justify-center py-4 border-t border-gray-200 mt-6">
-                 <div className="w-[300px] h-[250px] bg-gray-100 flex items-center justify-center border border-dashed border-gray-300 rounded-xl text-gray-400 text-sm">
-                   [広告枠] 300x250
-                 </div>
+              <div className="mt-auto pt-8">
+                <ZucksAd type="rectangle" />
               </div>
             </div>
           )}
 
-          {/* 全ページ共通の本格的なフッター */}
           {view !== "LOADING" && (
             <footer className="border-t border-gray-200 bg-gray-50 py-10 px-4 mt-auto">
               <div className="flex flex-wrap justify-center gap-x-6 gap-y-3 text-xs font-medium text-gray-600 mb-8">
