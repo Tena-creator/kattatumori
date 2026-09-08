@@ -7,29 +7,21 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function GET(request: Request) {
   try {
-    // 改行などを掃除して取得
     const rakutenAppId = (process.env.RAKUTEN_APP_ID || process.env.NEXT_PUBLIC_RAKUTEN_APP_ID || "").replace(/["']/g, "").trim();
-    const rakutenAccessKey = (process.env.RAKUTEN_ACCESS_KEY || process.env.NEXT_PUBLIC_RAKUTEN_ACCESS_KEY || "").replace(/["']/g, "").trim();
     const affiliateId = (process.env.RAKUTEN_AFFILIATE_ID || process.env.NEXT_PUBLIC_RAKUTEN_AFFILIATE_ID || "").replace(/["']/g, "").trim();
 
-    if (!rakutenAppId || !rakutenAccessKey) {
-      return NextResponse.json({ success: false, error: "楽天のAPP IDまたはAccess Keyが見つかりません" }, { status: 400 });
+    if (!rakutenAppId) {
+      return NextResponse.json({ success: false, error: "楽天のAPP IDが見つかりません" }, { status: 400 });
     }
 
     const searchKeywords = ["人気ランキング", "ファッション", "コスメ", "日用品", "家電", "食品", "高級時計"];
     let allProducts: any[] = [];
 
     for (const keyword of searchKeywords) {
-      // ▼ ここが最新の2026年版 楽天APIエンドポイントです！！
-      const url = `https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20220601?format=json&keyword=${encodeURIComponent(keyword)}&applicationId=${rakutenAppId}&accessKey=${rakutenAccessKey}&affiliateId=${affiliateId}&hits=30`;
+      // ▼ こちらも本来の正しいURLに戻しました
+      const url = `https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601?format=json&keyword=${encodeURIComponent(keyword)}&applicationId=${rakutenAppId}&affiliateId=${affiliateId}&hits=30`;
       
-      // ▼ 新仕様で必須になった「Referer（リファラー）」を追加
-      const res = await fetch(url, {
-        headers: {
-          'Referer': 'https://dopamine-rush.shop', 
-          'Origin': 'https://dopamine-rush.shop'
-        }
-      });
+      const res = await fetch(url);
       const data = await res.json();
       
       if (!data.Items) {
