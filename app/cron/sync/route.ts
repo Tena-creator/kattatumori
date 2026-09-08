@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Supabaseの接続設定
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+// ダミーURLを入れてビルドエラーを防ぐ
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://dummy.supabase.co";
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "dummy";
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function GET(request: Request) {
   try {
-    // ▼ 環境変数から楽天のAPP IDとアフィリエイトIDを取得（既存の/api/rakutenで使っている環境変数名に合わせてください）
+    // 環境変数から楽天のAPP IDとアフィリエイトIDを取得
     const rakutenAppId = process.env.RAKUTEN_APP_ID || process.env.NEXT_PUBLIC_RAKUTEN_APP_ID || "";
     const affiliateId = process.env.RAKUTEN_AFFILIATE_ID || process.env.NEXT_PUBLIC_RAKUTEN_AFFILIATE_ID || "";
 
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: "楽天のAPP IDが見つかりません" }, { status: 400 });
     }
 
-    // ▼ パトロールしてかき集めるキーワード（増やしてもOK）
+    // パトロールしてかき集めるキーワード
     const searchKeywords = ["人気ランキング", "ファッション", "コスメ", "日用品", "家電", "食品", "高級時計"];
     let allProducts: any[] = [];
 
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    // ▼ 取得した何百件ものデータをSupabaseに一括保存！！
+    // 取得した何百件ものデータをSupabaseに一括保存！！
     const { error } = await supabase.from('products').upsert(allProducts, { onConflict: 'id' });
     
     if (error) throw error;

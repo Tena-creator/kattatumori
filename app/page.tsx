@@ -69,6 +69,8 @@ export default function KattaTsumoriApp() {
   const [currentBanner, setCurrentBanner] = useState(0);
   
   const [isCheckoutFailed, setIsCheckoutFailed] = useState(false);
+  // ▼ 新しく追加：自動リロード中かどうかのフラグ
+  const [isAutoRetrying, setIsAutoRetrying] = useState(false);
 
   const [cmsPages, setCmsPages] = useState<Record<string, { title: string; content: string }>>({});
 
@@ -239,6 +241,7 @@ export default function KattaTsumoriApp() {
       const res = await fetch(url);
       const data = await res.json();
       const rawItems = data.Items || data.items;
+      
       if (rawItems && Array.isArray(rawItems)) {
         const fetchedItems = rawItems.map((itemData: any) => {
           const item = itemData.Item || itemData;
@@ -249,8 +252,34 @@ export default function KattaTsumoriApp() {
             shopName: item.shopName || "ショップ名不明", description: item.itemCaption || "説明なし", url: item.itemUrl || "#"
           };
         });
-        if (reset) setItems(fetchedItems); else setItems((prev) => [...prev, ...fetchedItems]);
-      } else if (reset) setItems([]);
+        
+        if (reset) {
+          setItems(fetchedItems);
+          // ▼ もし0件だった場合、上限を外して自動で1秒後に再検索する処理
+          if (fetchedItems.length === 0 && limitPrice > 0) {
+            setIsAutoRetrying(true);
+            setTimeout(() => {
+              setSliderValue(30000);
+              setMaxPrice(0);
+              setIsAutoRetrying(false);
+              fetchRakutenItems(keyword, 1, true, sort, 0);
+            }, 1000);
+          }
+        } else {
+          setItems((prev) => [...prev, ...fetchedItems]);
+        }
+      } else if (reset) {
+        setItems([]);
+        if (limitPrice > 0) {
+          setIsAutoRetrying(true);
+          setTimeout(() => {
+            setSliderValue(30000);
+            setMaxPrice(0);
+            setIsAutoRetrying(false);
+            fetchRakutenItems(keyword, 1, true, sort, 0);
+          }, 1000);
+        }
+      }
     } catch (error) {} 
     finally { setIsLoadingMain(false); setIsLoadingMore(false); }
   };
@@ -272,7 +301,6 @@ export default function KattaTsumoriApp() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [isLoadingMain, isLoadingMore, currentPage, currentKeyword, items.length, view, sortOrder, maxPrice]);
 
-  // ▼ 商品リストの上部にスクロールする共通関数
   const scrollToProducts = () => {
     setTimeout(() => {
       const element = document.getElementById("product-list-top");
@@ -289,7 +317,6 @@ export default function KattaTsumoriApp() {
     fetchRakutenItems(keyword, 1, true, sortOrder, maxPrice);
   };
 
-  // ▼ エンターキーを押した時 ＆ 検索ボタンを押した時の両方に対応
   const handleSearch = (e?: React.KeyboardEvent<HTMLInputElement>) => {
     if (!e || e.key === 'Enter') {
       if (searchInput.trim() !== "") {
@@ -552,7 +579,6 @@ export default function KattaTsumoriApp() {
               )}
 
               <div className="relative mb-6">
-                {/* ▼ 虫眼鏡アイコンをクリック可能に修正 */}
                 <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400 cursor-pointer hover:text-red-500 transition" onClick={() => handleSearch()} />
                 <input type="text" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={handleSearch} placeholder="キーワードで探す (Enterで実行)" className="w-full bg-gray-100 border border-gray-200 rounded-full py-2.5 pl-10 pr-4 text-gray-900 focus:border-red-500 focus:bg-white outline-none text-sm transition shadow-inner" />
               </div>
@@ -612,9 +638,19 @@ export default function KattaTsumoriApp() {
               ) : (
                 <>
                   {items.length === 0 ? (
-                    <div className="text-center py-20 text-gray-500">
-                      <p>商品が見つかりませんでした😢</p>
-                      <button onClick={() => { setSliderValue(30000); setMaxPrice(0); fetchRakutenItems(currentKeyword, 1, true, sortOrder, 0); }} className="mt-4 px-4 py-2 bg-red-50 text-red-600 rounded-full text-sm font-bold shadow-sm">上限を外して再検索</button>
+                    <div className="text-center py-20 text-gray-500 animate-in fade-in">
+                      {isAutoRetrying ? (
+                        <>
+                          <Loader2 className="w-10 h-10 text-red-600 animate-spin mx-auto mb-4" />
+                          <p className="font-bold text-gray-700">条件に合う商品が見つかりません。</p>
+                          <p className="text-xs mt-2 text-gray-500">予算上限を外して自動再検索しています...</p>
+                        </>
+                      ) : (
+                        <>
+                          <p>商品が見つかりませんでした😢</p>
+                          <button onClick={() => { setSliderValue(30000); setMaxPrice(0); fetchRakutenItems(currentKeyword, 1, true, sortOrder, 0); }} className="mt-4 px-4 py-2 bg-red-50 text-red-600 rounded-full text-sm font-bold shadow-sm">上限を外して再検索</button>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-4">
