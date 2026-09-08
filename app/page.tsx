@@ -392,7 +392,7 @@ export default function KattaTsumoriApp() {
           <button onClick={() => { setView("HOWTO"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><HelpCircle className="w-5 h-5 shrink-0" /> 使い方ガイド</button>
           <button onClick={() => { setView("TERMS"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><FileText className="w-5 h-5 shrink-0" /> 利用規約</button>
           <button onClick={() => { setView("PRIVACY"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><ShieldCheck className="w-5 h-5 shrink-0" /> プライバシーポリシー</button>
-          <button onClick={() => { setView("CONTACT"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><Mail className="w-5 h-5 shrink-0" /> お問い合わせ・広告掲載</button>
+          <button onClick={() => { setView("CONTACT"); setIsMenuOpen(false); }} className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><Mail className="w-5 h-5 shrink-0" /> お問い合わせ</button>
         </div>
         
         <div className="mt-8 px-6 text-xs text-gray-400 font-bold uppercase tracking-wider">設定とサポート</div>
