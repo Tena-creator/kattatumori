@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     shortcut: "/favicon.ico",
     apple: "/apple-icon.png",
   },
-  // ▼ アドセンスの審査用メタタグをここに追加！
+  // ▼ アドセンスの審査用メタタグ
   other: {
     "google-adsense-account": "ca-pub-7372592854852772",
   },
@@ -42,7 +42,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/apple-icon.png" />
 
         {/* ==========================================
-            ▼ Google Tag Manager (認識率100%の直接記述方式に変更) ▼
+            ▼ Google Tag Manager ▼
         ========================================== */}
         <script
           dangerouslySetInnerHTML={{
@@ -52,6 +52,28 @@ export default function RootLayout({
               j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
               'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
               })(window,document,'script','dataLayer','GTM-5RJWTNJQ');
+            `,
+          }}
+        />
+
+        {/* ==========================================
+            ▼ Google Analytics (GA4) 追加部分 ▼
+        ========================================== */}
+        <Script
+          strategy="afterInteractive"
+          src={`https://www.googletagmanager.com/gtag/js?id=G-28KGP9VGZC`}
+        />
+        <Script
+          id="gtag-init"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', 'G-28KGP9VGZC', {
+                page_path: window.location.pathname,
+              });
             `,
           }}
         />

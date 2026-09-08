@@ -9,18 +9,22 @@ type Props = {
 };
 
 export default function Header({ view, setView, setIsMenuOpen }: Props) {
+  // ハンバーガーメニューを出す画面（トップレベル）
   const isTopLevel = ["SHOP", "MYPAGE", "RESULT"].includes(view);
+  
+  // ▼ ロゴ画像を出す画面（ここに固定ページを追加しました！）
+  const showLogo = ["SHOP", "MYPAGE", "RESULT", "HOWTO", "PRIVACY", "TERMS", "CONTACT"].includes(view);
+
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
 
-  // ▼ スクロール方向を検知してヘッダーを隠す/出す処理
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
       if (currentScrollY > lastScrollY && currentScrollY > 60) {
         setIsVisible(false); // 下スクロールで隠す
       } else {
-        setIsVisible(true);  // 上スクロールでひょっこり出す
+        setIsVisible(true);  // 上スクロールで出す
       }
       setLastScrollY(currentScrollY);
     };
@@ -36,6 +40,14 @@ export default function Header({ view, setView, setIsMenuOpen }: Props) {
     if (view === "PAYMENT") setView("ADDRESS");
     if (view === "CONFIRM") setView("PAYMENT");
   };
+
+  // テキスト表示用のタイトル
+  let titleText = "";
+  if (view === "DETAIL") titleText = "商品詳細";
+  else if (view === "CART") titleText = "買い物かご";
+  else if (view === "ADDRESS") titleText = "お届け先情報";
+  else if (view === "PAYMENT") titleText = "お支払い方法";
+  else if (view === "CONFIRM") titleText = "注文確認";
 
   return (
     <header 
@@ -53,9 +65,8 @@ export default function Header({ view, setView, setIsMenuOpen }: Props) {
         ) : null}
       </div>
       
-      {/* ▼ ロゴをさらに拡大 (h-9 -> h-12) */}
       <div className="flex-1 flex justify-center items-center py-1">
-        {isTopLevel ? (
+        {showLogo ? (
           <img 
             src="/logo.png" 
             alt="カッタツモリ" 
@@ -67,8 +78,8 @@ export default function Header({ view, setView, setIsMenuOpen }: Props) {
             }} 
           />
         ) : null}
-        <h1 className={`text-xl font-bold tracking-tight text-red-600 text-center truncate ${isTopLevel ? 'hidden' : ''}`}>
-          {view === "DETAIL" ? "商品詳細" : view === "CART" ? "買い物かご" : view === "MYPAGE" ? "マイページ" : "カッタツモリ"}
+        <h1 className={`text-xl font-bold tracking-tight text-red-600 text-center truncate ${showLogo ? 'hidden' : ''}`}>
+          {titleText || "カッタツモリ"}
         </h1>
       </div>
       <div className="w-12"></div>

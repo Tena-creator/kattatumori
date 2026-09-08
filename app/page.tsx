@@ -5,7 +5,7 @@ import {
   ShoppingBag, ShieldCheck, Loader2, Star, Store, Search, Home, 
   User, Clock, Menu, X, Heart, Bell, Settings, Ticket, Trophy, Globe, ArrowDownUp,
   ShoppingCart, Package, AlertTriangle, Tv, Shirt, Sparkles, Utensils, Car, Smartphone, Grid,
-  HelpCircle, Mail, FileText, ChevronDown, ChevronUp
+  HelpCircle, Mail, FileText, ChevronDown, ChevronUp, Trash2, Cat, Dog, Ghost, Smile, Crown, Rocket
 } from "lucide-react";
 
 import { Item, Order, ViewState } from "./types";
@@ -18,6 +18,18 @@ import Header from "./components/Header";
 import BottomNav from "./components/BottomNav";
 import ProductCard from "./components/ProductCard";
 import ZucksAd from "./components/ZucksAd"; 
+import { supabase } from "./lib/supabase";
+
+function generateUUID() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// ▼ プリセットアイコンの定義
+const ICONS = { User, Cat, Dog, Ghost, Smile, Crown, Rocket };
 
 export default function KattaTsumoriApp() {
   const [view, setView] = useState<ViewState>("SHOP");
@@ -57,11 +69,101 @@ export default function KattaTsumoriApp() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [currentBanner, setCurrentBanner] = useState(0);
 
+  const [cmsPages, setCmsPages] = useState<Record<string, { title: string; content: string }>>({});
+
+  // Supabase用 & プロフィール用のState
+  const [userId, setUserId] = useState<string>("");
+  const [profileName, setProfileName] = useState<string>("ゲスト");
+  const [profileIcon, setProfileIcon] = useState<keyof typeof ICONS>("User");
+  const [ageGroup, setAgeGroup] = useState<string>("");
+  const [gender, setGender] = useState<string>("");
+  const [favorites, setFavorites] = useState<Item[]>([]);
+  
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+
+  useEffect(() => {
+    const initSupabase = async () => {
+      let storedUserId = localStorage.getItem("kattatsumori_userId");
+      const storedName = localStorage.getItem("kattatsumori_profileName");
+      const storedIcon = localStorage.getItem("kattatsumori_profileIcon") as keyof typeof ICONS;
+      
+      if (storedName) setProfileName(storedName);
+      if (storedIcon && ICONS[storedIcon]) setProfileIcon(storedIcon);
+
+      if (!storedUserId) {
+        storedUserId = generateUUID();
+        localStorage.setItem("kattatsumori_userId", storedUserId);
+        await supabase.from('profiles').insert([{ id: storedUserId }]);
+      } else {
+        const { data } = await supabase.from('profiles').select('*').eq('id', storedUserId).single();
+        if (data) {
+          setAgeGroup(data.age_group || "");
+          setGender(data.gender || "");
+        }
+      }
+      setUserId(storedUserId);
+
+      const { data: favData } = await supabase.from('favorites').select('*').eq('user_id', storedUserId);
+      if (favData) {
+        const mappedFavs = favData.map(f => ({
+          id: f.item_id, name: f.item_name, price: f.price, image: f.image_url,
+          rating: 0, reviews: 0, delivery: "", shopName: "", description: "", url: ""
+        }));
+        setFavorites(mappedFavs);
+      }
+    };
+    initSupabase();
+  }, []);
+
+  // ▼ マイページの情報を保存する処理
+  const handleSaveProfile = async () => {
+    localStorage.setItem("kattatsumori_profileName", profileName || "ゲスト");
+    localStorage.setItem("kattatsumori_profileIcon", profileIcon);
+    if (userId) {
+      await supabase.from('profiles').update({ age_group: ageGroup, gender: gender }).eq('id', userId);
+    }
+    setIsEditingProfile(false);
+    
+    // 属性が変わったので、裏でこっそり検索結果とトレンドをリロードして最適化！
+    fetchRakutenItems(currentKeyword, 1, true, sortOrder, maxPrice);
+  };
+
+  const toggleFavorite = async (item: Item) => {
+    if (!userId) return;
+    const isFav = favorites.some(f => f.id === item.id);
+    if (isFav) {
+      setFavorites(favorites.filter(f => f.id !== item.id));
+      await supabase.from('favorites').delete().eq('user_id', userId).eq('item_id', item.id);
+    } else {
+      setFavorites([...favorites, item]);
+      await supabase.from('favorites').insert([{
+        user_id: userId, item_id: item.id, item_name: item.name, price: item.price, image_url: item.image
+      }]);
+    }
+  };
+
+  useEffect(() => {
+    const fetchCmsPages = async () => {
+      const domain = process.env.NEXT_PUBLIC_MICROCMS_SERVICE_DOMAIN;
+      const apiKey = process.env.NEXT_PUBLIC_MICROCMS_API_KEY;
+      if (!domain || !apiKey) return;
+      try {
+        const res = await fetch(`https://${domain}.microcms.io/api/v1/pages?limit=10`, { headers: { "X-MICROCMS-API-KEY": apiKey } });
+        const data = await res.json();
+        if (data.contents) {
+          const pagesMap: Record<string, { title: string; content: string }> = {};
+          data.contents.forEach((item: any) => { pagesMap[item.slug] = { title: item.title, content: item.content }; });
+          setCmsPages(pagesMap);
+        }
+      } catch (e) {}
+    };
+    fetchCmsPages();
+  }, []);
+
   useEffect(() => {
     const savedHistory = localStorage.getItem("kattatsumori_orderHistory");
     const savedLifetimeAmt = localStorage.getItem("kattatsumori_lifetimeAmt");
     const savedLifetimeOrd = localStorage.getItem("kattatsumori_lifetimeOrd");
-    
     if (savedHistory) try { setOrderHistory(JSON.parse(savedHistory)); } catch (e) {}
     if (savedLifetimeAmt) setLifetimeAmount(Number(savedLifetimeAmt));
     if (savedLifetimeOrd) setLifetimeOrders(Number(savedLifetimeOrd));
@@ -82,32 +184,33 @@ export default function KattaTsumoriApp() {
 
   useEffect(() => {
     if (view !== "SHOP") return;
-    const timer = setInterval(() => {
-      setCurrentBanner((prev) => (prev + 1) % AD_BANNERS.length);
-    }, 4000);
+    const timer = setInterval(() => { setCurrentBanner((prev) => (prev + 1) % AD_BANNERS.length); }, 4000);
     return () => clearInterval(timer);
   }, [view]);
 
+  // ▼ トレンド商品の自動パーソナライズ機能
   useEffect(() => {
     const fetchTrending = async () => {
       try {
-        const res = await fetch(`/api/rakuten?keyword=${encodeURIComponent("高級時計")}&page=1&affiliateId=${APP_CONFIG.affiliate.rakutenId}`);
+        // 設定された年齢・性別に応じて、取得するトレンド商品を裏で変える
+        let trendKeyword = "高級時計"; 
+        if (ageGroup || gender) {
+           const ageStr = ageGroup ? ageGroup.replace("以上", "") : "";
+           const genderStr = gender !== "その他" ? gender : "";
+           trendKeyword = `人気 ランキング ${ageStr} ${genderStr}`.trim();
+        }
+
+        const res = await fetch(`/api/rakuten?keyword=${encodeURIComponent(trendKeyword)}&page=1&affiliateId=${APP_CONFIG.affiliate.rakutenId}`);
         const data = await res.json();
         const rawItems = data.Items || data.items;
         if (rawItems && Array.isArray(rawItems)) {
           const mapped = rawItems.slice(0, 10).map((itemData: any) => {
             const item = itemData.Item || itemData;
             return {
-              id: item.itemCode || String(Math.random()),
-              name: item.itemName || "商品名不明",
-              price: item.itemPrice || 0,
-              image: item.mediumImageUrls?.[0]?.imageUrl?.replace("?_ex=128x128", "") || "",
-              rating: item.reviewAverage || 0,
-              reviews: item.reviewCount || 0,
-              delivery: item.asurakuFlag ? "翌日配達可能" : "通常配送",
-              shopName: item.shopName || "",
-              description: item.itemCaption || "",
-              url: item.itemUrl || "#"
+              id: item.itemCode || String(Math.random()), name: item.itemName || "商品名不明", price: item.itemPrice || 0,
+              image: item.mediumImageUrls?.[0]?.imageUrl?.replace("?_ex=128x128", "") || "", rating: item.reviewAverage || 0,
+              reviews: item.reviewCount || 0, delivery: item.asurakuFlag ? "翌日配達可能" : "通常配送", shopName: item.shopName || "",
+              description: item.itemCaption || "", url: item.itemUrl || "#"
             };
           });
           setTrendingItems(mapped);
@@ -115,50 +218,44 @@ export default function KattaTsumoriApp() {
       } catch (e) {}
     };
     fetchTrending();
-  }, []);
+  }, [ageGroup, gender]);
 
+  // ▼ 通常検索の自動パーソナライズ機能
   const fetchRakutenItems = async (keyword: string, page: number, reset: boolean, sort: string, limitPrice: number) => {
-    if (reset) setIsLoadingMain(true);
-    else setIsLoadingMore(true);
-
+    if (reset) setIsLoadingMain(true); else setIsLoadingMore(true);
     try {
-      let url = `/api/rakuten?keyword=${encodeURIComponent(keyword)}&page=${page}&sort=${encodeURIComponent(sort)}&affiliateId=${APP_CONFIG.affiliate.rakutenId}`;
-      if (limitPrice > 0) url += `&maxPrice=${limitPrice}`;
+      let queryKeyword = keyword;
 
+      // 抽象的なカテゴリやデフォルト検索の時だけ、裏で年齢と性別を付加して最適化！
+      const abstractKeywords = ["人気", "ファッション", "コスメ", "日用品", APP_CONFIG.defaultSearchKeyword];
+      if ((ageGroup || gender) && abstractKeywords.includes(keyword)) {
+        const ageStr = ageGroup ? ageGroup.replace("以上", "") : "";
+        const genderStr = gender !== "その他" ? gender : "";
+        queryKeyword = `${keyword} ${ageStr} ${genderStr}`.trim();
+      }
+
+      let url = `/api/rakuten?keyword=${encodeURIComponent(queryKeyword)}&page=${page}&sort=${encodeURIComponent(sort)}&affiliateId=${APP_CONFIG.affiliate.rakutenId}`;
+      if (limitPrice > 0) url += `&maxPrice=${limitPrice}`;
       const res = await fetch(url);
       const data = await res.json();
       const rawItems = data.Items || data.items;
-      
       if (rawItems && Array.isArray(rawItems)) {
         const fetchedItems = rawItems.map((itemData: any) => {
           const item = itemData.Item || itemData;
-          const imageUrl = item.mediumImageUrls?.[0]?.imageUrl?.replace("?_ex=128x128", "") || "https://placehold.co/600x600/f3f4f6/a1a1aa?text=No+Image";
           return {
-            id: item.itemCode || String(Math.random()),
-            name: item.itemName || "商品名不明",
-            price: item.itemPrice || 0,
-            image: imageUrl,
-            rating: item.reviewAverage || 0,
-            reviews: item.reviewCount || 0,
-            delivery: item.asurakuFlag ? "翌日配達可能" : "通常配送",
-            shopName: item.shopName || "ショップ名不明",
-            description: item.itemCaption || "説明なし",
-            url: item.itemUrl || "#"
+            id: item.itemCode || String(Math.random()), name: item.itemName || "商品名不明", price: item.itemPrice || 0,
+            image: item.mediumImageUrls?.[0]?.imageUrl?.replace("?_ex=128x128", "") || "https://placehold.co/600x600/f3f4f6/a1a1aa?text=No+Image",
+            rating: item.reviewAverage || 0, reviews: item.reviewCount || 0, delivery: item.asurakuFlag ? "翌日配達可能" : "通常配送",
+            shopName: item.shopName || "ショップ名不明", description: item.itemCaption || "説明なし", url: item.itemUrl || "#"
           };
         });
-        if (reset) setItems(fetchedItems);
-        else setItems((prev) => [...prev, ...fetchedItems]);
-      } else if (reset) {
-        setItems([]);
-      }
+        if (reset) setItems(fetchedItems); else setItems((prev) => [...prev, ...fetchedItems]);
+      } else if (reset) setItems([]);
     } catch (error) {} 
-    finally {
-      setIsLoadingMain(false);
-      setIsLoadingMore(false);
-    }
+    finally { setIsLoadingMain(false); setIsLoadingMore(false); }
   };
 
-  useEffect(() => { fetchRakutenItems(currentKeyword, 1, true, sortOrder, maxPrice); }, []);
+  useEffect(() => { fetchRakutenItems(currentKeyword, 1, true, sortOrder, maxPrice); }, [ageGroup, gender]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -176,11 +273,7 @@ export default function KattaTsumoriApp() {
   }, [isLoadingMain, isLoadingMore, currentPage, currentKeyword, items.length, view, sortOrder, maxPrice]);
 
   const handleQuickCategory = (keyword: string) => {
-    setCurrentKeyword(keyword);
-    setSearchInput(""); 
-    setCurrentPage(1);
-    setIsBottomCategoryOpen(false);
-    
+    setCurrentKeyword(keyword); setSearchInput(""); setCurrentPage(1); setIsBottomCategoryOpen(false);
     setTimeout(() => {
       const element = document.getElementById("product-list-top");
       if (element) {
@@ -188,23 +281,17 @@ export default function KattaTsumoriApp() {
         window.scrollTo({ top: y, behavior: 'smooth' });
       }
     }, 100);
-
     fetchRakutenItems(keyword, 1, true, sortOrder, maxPrice);
   };
 
   const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && searchInput.trim() !== "") {
-      setCurrentKeyword(searchInput);
-      setCurrentPage(1);
-      fetchRakutenItems(searchInput, 1, true, sortOrder, maxPrice);
+      setCurrentKeyword(searchInput); setCurrentPage(1); fetchRakutenItems(searchInput, 1, true, sortOrder, maxPrice);
     }
   };
 
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newSort = e.target.value;
-    setSortOrder(newSort);
-    setCurrentPage(1);
-    fetchRakutenItems(currentKeyword, 1, true, newSort, maxPrice);
+    const newSort = e.target.value; setSortOrder(newSort); setCurrentPage(1); fetchRakutenItems(currentKeyword, 1, true, newSort, maxPrice);
   };
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => setSliderValue(Number(e.target.value));
@@ -212,9 +299,7 @@ export default function KattaTsumoriApp() {
   const handleSliderRelease = () => {
     const newMaxPrice = sliderValue >= 30000 ? 0 : sliderValue;
     if (maxPrice !== newMaxPrice) {
-      setMaxPrice(newMaxPrice);
-      setCurrentPage(1);
-      fetchRakutenItems(currentKeyword, 1, true, sortOrder, newMaxPrice);
+      setMaxPrice(newMaxPrice); setCurrentPage(1); fetchRakutenItems(currentKeyword, 1, true, sortOrder, newMaxPrice);
     }
   };
 
@@ -235,6 +320,15 @@ export default function KattaTsumoriApp() {
     setPaymentError(""); setView("CONFIRM");
   };
 
+  // ▼ 個別の購入履歴を削除する処理
+  const handleDeleteOrder = (orderId: string) => {
+    if (window.confirm("この妄想履歴を削除しますか？\n（※全世界売上への貢献額はキープされます）")) {
+      const updatedHistory = orderHistory.filter(o => o.id !== orderId);
+      setOrderHistory(updatedHistory);
+      localStorage.setItem("kattatsumori_orderHistory", JSON.stringify(updatedHistory));
+    }
+  };
+
   const handleResetHistory = () => {
     if (window.confirm("購入履歴をすべて消去しますか？\n（※全世界売上への貢献額はキープされます！）")) {
       localStorage.removeItem("kattatsumori_orderHistory");
@@ -246,7 +340,7 @@ export default function KattaTsumoriApp() {
 
   useEffect(() => {
     if (view === "LOADING") {
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         const newOrder: Order = { id: `ORD-${Date.now()}`, date: new Date().toLocaleString('ja-JP'), items: [...cart], total: totalAmount, payMethod: payMethod };
         const updatedHistory = [newOrder, ...orderHistory];
         setOrderHistory(updatedHistory);
@@ -258,12 +352,25 @@ export default function KattaTsumoriApp() {
         localStorage.setItem("kattatsumori_lifetimeAmt", String(newLifetimeAmt));
         localStorage.setItem("kattatsumori_lifetimeOrd", String(newLifetimeOrd));
 
+        if (userId) {
+          const { data: orderData } = await supabase.from('orders').insert([{ user_id: userId, total_amount: totalAmount }]).select().single();
+          if (orderData) {
+            const orderItems = cart.map(item => ({
+              order_id: orderData.id, item_id: item.id, item_name: item.name, price: item.price
+            }));
+            await supabase.from('order_items').insert(orderItems);
+          }
+          await supabase.from('profiles').update({ lifetime_amount: newLifetimeAmt }).eq('id', userId);
+        }
+
         setCart([]); setName(""); setAddress(""); setPhone(""); setCardNum(""); setCvv(""); setPayMethod("credit");
         setView("RESULT");
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [view, cart, totalAmount, orderHistory, payMethod, lifetimeAmount, lifetimeOrders]);
+  }, [view, cart, totalAmount, orderHistory, payMethod, lifetimeAmount, lifetimeOrders, userId]);
+
+  const ProfileIconElement = ICONS[profileIcon] || User;
 
   const MenuContent = () => (
     <div className="flex flex-col h-full text-gray-800">
@@ -289,9 +396,7 @@ export default function KattaTsumoriApp() {
         <div className="mt-8 px-6 text-xs text-gray-400 font-bold uppercase tracking-wider">設定とサポート</div>
         <div className="space-y-1 px-3 mt-2">
           <button className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-gray-100 transition text-gray-700"><Settings className="w-5 h-5" /> アカウント設定</button>
-          
           <ZucksAd type="rectangle" />
-
           <button onClick={handleResetHistory} className="w-full flex items-center justify-center py-2 px-3 rounded-xl hover:bg-red-50 transition text-red-400 hover:text-red-500 text-xs font-medium">妄想履歴をリセット</button>
         </div>
       </div>
@@ -348,10 +453,10 @@ export default function KattaTsumoriApp() {
         <Header view={view} setView={setView} setIsMenuOpen={setIsMenuOpen} />
 
         <div className="flex-1 flex flex-col">
-          {view === "HOWTO" && renderStaticPage(PAGE_CONTENT.howto.title, PAGE_CONTENT.howto.content)}
-          {view === "PRIVACY" && renderStaticPage(PAGE_CONTENT.privacy.title, PAGE_CONTENT.privacy.content)}
-          {view === "TERMS" && renderStaticPage(PAGE_CONTENT.terms.title, PAGE_CONTENT.terms.content)}
-          {view === "CONTACT" && renderStaticPage(PAGE_CONTENT.contact.title, PAGE_CONTENT.contact.content)}
+          {view === "HOWTO" && renderStaticPage(cmsPages["howto"]?.title || PAGE_CONTENT.howto.title, cmsPages["howto"]?.content || PAGE_CONTENT.howto.content)}
+          {view === "PRIVACY" && renderStaticPage(cmsPages["privacy"]?.title || PAGE_CONTENT.privacy.title, cmsPages["privacy"]?.content || PAGE_CONTENT.privacy.content)}
+          {view === "TERMS" && renderStaticPage(cmsPages["terms"]?.title || PAGE_CONTENT.terms.title, cmsPages["terms"]?.content || PAGE_CONTENT.terms.content)}
+          {view === "CONTACT" && renderStaticPage(cmsPages["contact"]?.title || PAGE_CONTENT.contact.title, cmsPages["contact"]?.content || PAGE_CONTENT.contact.content)}
 
           {view === "SHOP" && (
             <div className="p-4 animate-in fade-in flex-1">
@@ -479,13 +584,75 @@ export default function KattaTsumoriApp() {
             <div className="space-y-6 p-4 animate-in fade-in pb-12 flex flex-col h-full">
               <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm space-y-6 relative overflow-hidden">
                 <div className="absolute -top-10 -right-10 w-32 h-32 bg-red-50 rounded-full blur-2xl"></div>
+                
                 <div className="flex items-center gap-4 relative z-10">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center border-2 border-red-600 shrink-0"><User className="w-8 h-8 text-gray-400" /></div>
-                  <div>
-                    <h2 className="text-lg font-bold text-gray-900">{name || "ゲスト"} 様</h2>
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center border-2 border-red-600 shrink-0 shadow-sm overflow-hidden">
+                    <ProfileIconElement className="w-8 h-8 text-gray-500" />
+                  </div>
+                  <div className="flex-1">
+                    <h2 className="text-lg font-bold text-gray-900 truncate">{profileName} 様</h2>
                     <div className="flex items-center gap-1 mt-1"><Trophy className={`w-4 h-4 ${currentRank.color}`} /><p className={`text-sm font-bold ${currentRank.color}`}>{currentRank.title}</p></div>
                   </div>
                 </div>
+
+                <div className="relative z-10">
+                  {isEditingProfile ? (
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-4 animate-in fade-in slide-in-from-top-2">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">ニックネーム</label>
+                        <input type="text" value={profileName} onChange={(e)=>setProfileName(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg p-2 text-sm outline-none focus:border-red-400" placeholder="ゲスト" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">アイコン</label>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.keys(ICONS).map((iconKey) => {
+                            const IconComp = ICONS[iconKey as keyof typeof ICONS];
+                            return (
+                              <button key={iconKey} onClick={() => setProfileIcon(iconKey as keyof typeof ICONS)} className={`p-2.5 rounded-full border transition shadow-sm ${profileIcon === iconKey ? 'border-red-500 bg-red-50 text-red-500 scale-110' : 'border-gray-200 bg-white text-gray-400 hover:bg-gray-100'}`}>
+                                <IconComp className="w-5 h-5" />
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-600 mb-1">年代 (任意)</label>
+                          <select value={ageGroup} onChange={(e)=>setAgeGroup(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg p-2 text-sm outline-none focus:border-red-400">
+                            <option value="">未設定</option>
+                            <option value="10代">10代</option><option value="20代">20代</option><option value="30代">30代</option>
+                            <option value="40代">40代</option><option value="50代">50代</option><option value="60代以上">60代以上</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-600 mb-1">性別 (任意)</label>
+                          <select value={gender} onChange={(e)=>setGender(e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg p-2 text-sm outline-none focus:border-red-400">
+                            <option value="">未設定</option>
+                            <option value="女性">女性</option><option value="男性">男性</option><option value="その他">その他</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2 pt-2 border-t border-gray-200">
+                        <button onClick={() => setIsEditingProfile(false)} className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-200 rounded-lg transition">キャンセル</button>
+                        <button onClick={handleSaveProfile} className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition shadow-sm">保存して最適化</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setIsEditingProfile(true)} className="text-[10px] font-bold text-gray-500 bg-white border border-gray-200 hover:bg-gray-50 px-3 py-1.5 rounded-full flex items-center gap-1 transition shadow-sm">
+                        <Settings className="w-3 h-3"/> プロフィールを編集
+                      </button>
+                      {(ageGroup || gender) && (
+                        <span className="text-[10px] text-gray-400 font-medium bg-gray-100 px-2 py-1 rounded-full">
+                          {ageGroup} {gender}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-4 border-t border-gray-100 pt-5 relative z-10">
                   <div><p className="text-xs text-gray-500 mb-1">個人の生涯妄想額</p><p className="text-2xl font-black text-gray-900">¥<span className="text-red-600">{lifetimeAmount.toLocaleString()}</span></p></div>
                   <div><p className="text-xs text-gray-500 mb-1">総注文数</p><p className="text-2xl font-black text-gray-900">{lifetimeOrders} <span className="text-sm font-normal text-gray-500">回</span></p></div>
@@ -493,7 +660,28 @@ export default function KattaTsumoriApp() {
               </div>
 
               <div>
-                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2"><Clock className="w-5 h-5 text-red-600" />購入履歴</h3>
+                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2"><Heart className="w-5 h-5 text-pink-500" />お気に入り</h3>
+                {favorites.length === 0 ? (
+                  <div className="bg-white border border-gray-200 rounded-xl p-6 text-center text-gray-500 shadow-sm">
+                    <Heart className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                    <p className="text-xs mt-2">気になる商品は「♡」で保存しよう！</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {favorites.map((fav) => (
+                      <div key={fav.id} onClick={() => { setSelectedItem(fav); setView("DETAIL"); }} className="bg-white border border-gray-200 rounded-xl p-2 cursor-pointer shadow-sm relative hover:shadow-md transition group">
+                        <img src={fav.image} className="w-full h-24 object-cover rounded-lg mb-2 bg-gray-50" />
+                        <button onClick={(e) => { e.stopPropagation(); toggleFavorite(fav); }} className="absolute top-3 right-3 bg-white/80 p-1.5 rounded-full shadow-sm hover:scale-110 transition"><Heart className="w-4 h-4 text-pink-500 fill-current" /></button>
+                        <p className="text-[10px] text-gray-800 line-clamp-2 h-7 group-hover:text-red-600 transition">{fav.name}</p>
+                        <p className="text-xs font-bold text-red-600 mt-1">¥{fav.price.toLocaleString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2 mt-6"><Clock className="w-5 h-5 text-red-600" />購入履歴</h3>
                 {orderHistory.length === 0 ? (
                   <div className="bg-white border border-gray-200 rounded-xl p-8 text-center text-gray-500 shadow-sm"><ShoppingBag className="w-10 h-10 mx-auto mb-3 text-gray-300" /><p>履歴はリセットされています</p></div>
                 ) : (
@@ -501,7 +689,14 @@ export default function KattaTsumoriApp() {
                     {orderHistory.map((order) => (
                       <div key={order.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
                         <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-3">
-                          <span className="text-xs text-gray-500">{order.date}</span><span className="text-xs font-bold bg-red-50 text-red-700 px-2 py-1 rounded">妄想完了</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500">{order.date}</span>
+                            <span className="text-[10px] font-bold bg-red-50 text-red-700 px-2 py-0.5 rounded">妄想完了</span>
+                          </div>
+                          {/* ▼ 個別削除ボタン（ゴミ箱アイコン） */}
+                          <button onClick={() => handleDeleteOrder(order.id)} className="p-1 hover:bg-red-50 rounded transition group">
+                            <Trash2 className="w-4 h-4 text-gray-300 group-hover:text-red-500 transition" />
+                          </button>
                         </div>
                         
                         <div className="space-y-3 mb-3">
@@ -531,15 +726,23 @@ export default function KattaTsumoriApp() {
               <div className="mt-auto pt-8 flex flex-col items-center">
                 <ZucksAd type="rectangle" />
                 <button onClick={handleResetHistory} className="text-xs text-red-400 hover:text-red-500 hover:underline transition mt-2 py-2">
-                  妄想履歴をリセット
+                  すべての妄想履歴をリセット
                 </button>
               </div>
             </div>
           )}
 
           {view === "DETAIL" && selectedItem && (
-            <div className="animate-in fade-in slide-in-from-right-4 bg-white min-h-screen pb-24">
+            <div className="animate-in fade-in slide-in-from-right-4 bg-white min-h-screen pb-24 relative">
               <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-80 object-cover bg-gray-50 border-b border-gray-200" />
+              
+              <button 
+                onClick={() => toggleFavorite(selectedItem)}
+                className="absolute top-4 right-4 bg-white/90 backdrop-blur p-3 rounded-full shadow-lg hover:scale-110 active:scale-95 transition"
+              >
+                <Heart className={`w-6 h-6 ${favorites.some(f => f.id === selectedItem.id) ? 'fill-pink-500 text-pink-500' : 'text-gray-400'}`} />
+              </button>
+
               <div className="p-4 space-y-4">
                 <div className="flex items-center text-sm text-yellow-500"><Star className="w-4 h-4 fill-current" /><span className="ml-1 font-bold text-base text-gray-800">{selectedItem.rating > 0 ? selectedItem.rating.toFixed(2) : "-"}</span><span className="text-gray-500 ml-2">({selectedItem.reviews.toLocaleString()}件)</span></div>
                 <h2 className="text-lg font-medium leading-relaxed text-gray-900">{selectedItem.name}</h2>
@@ -664,7 +867,6 @@ export default function KattaTsumoriApp() {
                   <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">商品到着時のお願い</p><p className="text-gray-700">商品（架空）の到着時に、配達員（架空）へ代金 <strong className="text-lg text-red-600">¥{orderHistory[0]?.total.toLocaleString()}</strong> を架空の現金でお支払いください。</p></div>
                 )}
 
-                {/* ▼ 「実際に欲しくなった方へ」をセンター配置に変更 */}
                 <div className="pt-4 space-y-4">
                   <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 text-center">
                     <p className="text-sm text-gray-800 mb-3 font-bold">＼ 実際に欲しくなった方は ／</p>
