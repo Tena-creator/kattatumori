@@ -504,7 +504,6 @@ export default function KattaTsumoriApp() {
                           <span className="text-xs text-gray-500">{order.date}</span><span className="text-xs font-bold bg-red-50 text-red-700 px-2 py-1 rounded">妄想完了</span>
                         </div>
                         
-                        {/* ▼ マイページ内で商品ごとの詳細とアフィリエイトリンクを展開 */}
                         <div className="space-y-3 mb-3">
                           {order.items.map((item, i) => (
                             <div key={i} className="flex gap-3 items-center">
@@ -665,11 +664,11 @@ export default function KattaTsumoriApp() {
                   <div className="bg-gray-100 p-5 rounded-xl text-sm mb-6 text-left border border-gray-200"><p className="font-bold text-gray-800 mb-2">商品到着時のお願い</p><p className="text-gray-700">商品（架空）の到着時に、配達員（架空）へ代金 <strong className="text-lg text-red-600">¥{orderHistory[0]?.total.toLocaleString()}</strong> を架空の現金でお支払いください。</p></div>
                 )}
 
-                {/* ▼ 「実際に欲しくなった方へ」を控えめな案内文へ変更 */}
+                {/* ▼ 「実際に欲しくなった方へ」をセンター配置に変更 */}
                 <div className="pt-4 space-y-4">
-                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 text-left">
+                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 text-center">
                     <p className="text-sm text-gray-800 mb-3 font-bold">＼ 実際に欲しくなった方は ／</p>
-                    <p className="text-xs text-gray-600 leading-relaxed mb-5">
+                    <p className="text-xs text-gray-600 leading-relaxed mb-5 inline-block text-left">
                       マイページの「購入履歴」を開くと、妄想した各商品を実際のショップ（楽天・Amazon）で確認・購入することができます。
                     </p>
                     
