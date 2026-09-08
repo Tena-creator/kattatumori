@@ -1,39 +1,57 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React from "react";
 
 type Props = {
-  type?: "rectangle" | "banner"; 
-  frameId?: string; 
+  type: "banner" | "rectangle";
 };
 
-export default function ZucksAd({ type = "rectangle", frameId }: Props) {
-  const adRef = useRef<HTMLDivElement>(null);
+export default function ZucksAd({ type }: Props) {
+  // 審査通過したZucksの本番ID
+  const frameId = type === "banner" ? "736767" : "736768";
+  const width = 300;
+  const height = type === "banner" ? 100 : 250;
 
-  // ▼ サイズに応じて自動でタグIDを切り替え
-  const currentFrameId = frameId || (type === "banner" ? "736767" : "736768");
-  const isBanner = type === "banner";
-
-  useEffect(() => {
-    // すでに広告タグが挿入されている場合は二重表示を防止
-    if (!adRef.current || adRef.current.hasChildNodes()) return;
-
-    const script = document.createElement("script");
-    script.type = "text/javascript";
-    script.src = `https://j.zucks.net.zimg.jp/j?f=${currentFrameId}`;
-    script.async = true;
-    
-    adRef.current.appendChild(script);
-  }, [currentFrameId]);
+  // SPA（Next.js）環境で画面が真っ白になるエラーを防ぐため、iframe内に隔離して広告を展開します
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="ja">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { 
+            margin: 0; 
+            padding: 0; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            background-color: transparent; 
+          }
+        </style>
+      </head>
+      <body>
+        <script type="text/javascript" src="https://j.zucks.net.zimg.jp/j?f=${frameId}"></script>
+      </body>
+    </html>
+  `;
 
   return (
-    // 上下の均等な余白（my-6）
-    <div className="w-full flex justify-center my-6">
-      <div 
-        ref={adRef} 
-        className={`flex items-center justify-center bg-gray-50/50 overflow-hidden ${
-          isBanner ? "w-[320px] min-h-[100px]" : "w-[300px] min-h-[250px]"
-        }`}
+    <div className="flex justify-center w-full my-4">
+      <iframe
+        srcDoc={htmlContent}
+        width={width}
+        height={height}
+        scrolling="no"
+        frameBorder="0"
+        style={{ 
+          border: "none", 
+          overflow: "hidden", 
+          width: `${width}px`, 
+          height: `${height}px`,
+          maxWidth: "100%"
+        }}
+        title={`Zucks Ad ${type}`}
       />
     </div>
   );
