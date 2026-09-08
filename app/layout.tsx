@@ -17,8 +17,8 @@ export const metadata: Metadata = {
   title: "カッタツモリ | 妄想通販プラットフォーム",
   description: "日本最大級の妄想通販サイト。ストレス発散にどうぞ！実際にはお金は減りません。",
   icons: {
-    icon: "/favicon.ico",
-    shortcut: "/favicon.ico",
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
     apple: "/apple-icon.png",
   },
   // ▼ アドセンスの審査用メタタグ
