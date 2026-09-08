@@ -8,25 +8,33 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function GET(request: Request) {
   try {
-    const rakutenAppId = process.env.RAKUTEN_APP_ID || process.env.NEXT_PUBLIC_RAKUTEN_APP_ID || "";
-    const affiliateId = process.env.RAKUTEN_AFFILIATE_ID || process.env.NEXT_PUBLIC_RAKUTEN_AFFILIATE_ID || "";
+    // ▼ ここを修正！ 
+    // 空白、改行、見えないゴミ、不要な「"」などを強制的にすべて削除してキレイにする無敵処理！
+    const rakutenAppId = (process.env.RAKUTEN_APP_ID || process.env.NEXT_PUBLIC_RAKUTEN_APP_ID || "")
+      .replace(/["']/g, "")
+      .trim();
+      
+    const affiliateId = (process.env.RAKUTEN_AFFILIATE_ID || process.env.NEXT_PUBLIC_RAKUTEN_AFFILIATE_ID || "")
+      .replace(/["']/g, "")
+      .trim();
 
     if (!rakutenAppId) {
       return NextResponse.json({ success: false, error: "楽天のAPP IDが見つかりません" }, { status: 400 });
     }
 
-    // 原因究明のため、まずは「人気ランキング」だけでテスト
+    // 原因究明用：人気ランキングを叩く
     const keyword = "人気ランキング";
     const url = `https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601?format=json&keyword=${encodeURIComponent(keyword)}&applicationId=${rakutenAppId}&affiliateId=${affiliateId}&hits=30`;
     
     const res = await fetch(url);
     const data = await res.json();
     
-    // ▼ もしItems（商品データ）が取れなかったら、楽天の生のエラーメッセージを画面に出す！
+    // エラーが返ってきたら詳細を表示
     if (!data.Items) {
       return NextResponse.json({ 
         success: false, 
         message: "楽天APIから商品が返ってきませんでした！", 
+        debug_cleanedAppId: rakutenAppId, // 掃除された後のIDを確認用に出力
         rakutenErrorDetail: data 
       });
     }
