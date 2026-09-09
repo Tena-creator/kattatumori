@@ -171,7 +171,6 @@ export default function KattaTsumoriApp() {
 
   useEffect(() => {
     const fetchCmsPages = async () => {
-      // ⚠️ ここにご自身のmicroCMSの情報を貼り付けてください
       const domain = process.env.NEXT_PUBLIC_MICROCMS_SERVICE_DOMAIN || "YOUR_MICROCMS_DOMAIN"; 
       const apiKey = process.env.NEXT_PUBLIC_MICROCMS_API_KEY || "YOUR_MICROCMS_API_KEY";
 
@@ -220,18 +219,26 @@ export default function KattaTsumoriApp() {
     return () => clearInterval(timer);
   }, [view, activeBanners.length]);
 
-  const mapProduct = (product: any): Item => ({
-    id: product.id,
-    name: product.name || "商品名不明",
-    price: Number(product.price || 0),
-    image: product.image_url || "https://placehold.co/600x600/f3f4f6/a1a1aa?text=No+Image",
-    rating: Number(product.rating || 0),
-    reviews: Number(product.reviews || 0),
-    delivery: product.delivery || "通常配送",
-    shopName: product.shop_name || "ショップ名不明",
-    description: product.description || "説明なし",
-    url: product.url || "#",
-  });
+  const mapProduct = (product: any): Item => {
+    // 【変更】カンマ区切りの文字列を配列に分割
+    const imagesStr = product.image_url || "https://placehold.co/600x600/f3f4f6/a1a1aa?text=No+Image";
+    const imageArray = imagesStr.split(",");
+    
+    return {
+      id: product.id,
+      name: product.name || "商品名不明",
+      price: Number(product.price || 0),
+      image: imageArray[0], // 一覧画面は必ず1枚目を表示
+      rating: Number(product.rating || 0),
+      reviews: Number(product.reviews || 0),
+      delivery: product.delivery || "通常配送",
+      shopName: product.shop_name || "ショップ名不明",
+      description: product.description || "説明なし",
+      url: product.url || "#",
+      // 型定義を変更せずに動的に配列を詰め込むハック
+      allImages: imageArray,
+    } as Item & { allImages: string[] };
+  };
 
   const getQueryKeyword = (keyword: string) => {
     const abstractKeywords = ["人気", "ファッション", "コスメ", "日用品", APP_CONFIG.defaultSearchKeyword];
@@ -257,16 +264,11 @@ export default function KattaTsumoriApp() {
         query = query.lte("price", limitPrice);
       }
 
-      // =======================================================
-      // 🌟【大修正】並び替えの順番をデータベースのインデックスと完全に一致させました
-      // これにより、数万件の検索でもタイムアウトせず0.001秒で表示されます
-      // =======================================================
       if (sort === "+itemPrice") {
         query = query.order("price", { ascending: true });
       } else if (sort === "-itemPrice") {
         query = query.order("price", { ascending: false });
       } else {
-        // reviews が先、rating が後！
         query = query.order("reviews", { ascending: false }).order("rating", { ascending: false });
       }
 
@@ -527,6 +529,9 @@ export default function KattaTsumoriApp() {
 
   if (!isHistoryLoaded) return null;
 
+  // 【追加】詳細画面のカルーセル用に画像を配列として取り出す
+  const detailImages = selectedItem ? ((selectedItem as any).allImages as string[]) || [selectedItem.image] : [];
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans flex justify-center relative">
       
@@ -638,8 +643,9 @@ export default function KattaTsumoriApp() {
                 <div className="mb-6 -mx-4 pl-4">
                   <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2"><Clock className="w-4 h-4 text-red-600" /> さっき誰かが妄想決済した商品</h3>
                   <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide pr-4">
+                    {/* 【変更】クリック時にトップへスクロール */}
                     {trendingItems.map((item, idx) => (
-                      <div key={`trend-${idx}`} onClick={() => { setSelectedItem(item); setView("DETAIL"); }} className="w-32 shrink-0 bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] border border-gray-100 p-2 cursor-pointer hover:shadow-md transition flex flex-col gap-2">
+                      <div key={`trend-${idx}`} onClick={() => { setSelectedItem(item); setView("DETAIL"); window.scrollTo(0, 0); }} className="w-32 shrink-0 bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] border border-gray-100 p-2 cursor-pointer hover:shadow-md transition flex flex-col gap-2">
                         <img src={item.image} className="w-full h-28 object-cover rounded-lg bg-gray-50 border border-gray-100" />
                         <div className="flex flex-col gap-1">
                           <span className="text-[10px] font-medium leading-snug line-clamp-2 text-gray-700 h-7">{item.name}</span>
@@ -717,9 +723,10 @@ export default function KattaTsumoriApp() {
                     </div>
                   ) : (
                     <div className="space-y-4">
+                      {/* 【変更】クリック時にトップへスクロール */}
                       {items.map((item, index) => (
                         <React.Fragment key={`${item.id}-${index}`}>
-                          <ProductCard item={item} onClick={() => { setSelectedItem(item); setView("DETAIL"); }} />
+                          <ProductCard item={item} onClick={() => { setSelectedItem(item); setView("DETAIL"); window.scrollTo(0, 0); }} />
                           {(index + 1) % 30 === 0 && (
                             <ZucksAd type="banner" />
                           )}
@@ -821,8 +828,9 @@ export default function KattaTsumoriApp() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
+                    {/* 【変更】クリック時にトップへスクロール */}
                     {favorites.map((fav) => (
-                      <div key={fav.id} onClick={() => { setSelectedItem(fav); setView("DETAIL"); }} className="bg-white border border-gray-200 rounded-xl p-2 cursor-pointer shadow-sm relative hover:shadow-md transition group">
+                      <div key={fav.id} onClick={() => { setSelectedItem(fav); setView("DETAIL"); window.scrollTo(0, 0); }} className="bg-white border border-gray-200 rounded-xl p-2 cursor-pointer shadow-sm relative hover:shadow-md transition group">
                         <img src={fav.image} className="w-full h-24 object-cover rounded-lg mb-2 bg-gray-50" />
                         <button onClick={(e) => { e.stopPropagation(); toggleFavorite(fav); }} className="absolute top-3 right-3 bg-white/80 p-1.5 rounded-full shadow-sm hover:scale-110 transition"><Heart className="w-4 h-4 text-pink-500 fill-current" /></button>
                         <p className="text-[10px] text-gray-800 line-clamp-2 h-7 group-hover:text-red-600 transition">{fav.name}</p>
@@ -884,9 +892,24 @@ export default function KattaTsumoriApp() {
             </div>
           )}
 
+          {/* ======================================================= */}
+          {/* 🌟【大修正】商品詳細画面のカルーセル実装 */}
+          {/* ======================================================= */}
           {view === "DETAIL" && selectedItem && (
             <div className="animate-in fade-in slide-in-from-right-4 bg-white min-h-screen pb-32 relative">
-              <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-80 object-cover bg-gray-50 border-b border-gray-200" />
+              
+              <div className="relative w-full h-80 bg-gray-50 border-b border-gray-200">
+                <div className="w-full h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-hide">
+                  {detailImages.map((img: string, idx: number) => (
+                    <img key={idx} src={img} alt={`${selectedItem.name}-${idx}`} className="w-full h-full object-cover shrink-0 snap-center" />
+                  ))}
+                </div>
+                {detailImages.length > 1 && (
+                  <div className="absolute bottom-3 right-3 bg-black/50 text-white text-[10px] font-bold px-2 py-1 rounded-full z-10 backdrop-blur-sm pointer-events-none shadow-sm">
+                    {detailImages.length}枚 ➡ スワイプ
+                  </div>
+                )}
+              </div>
               
               <button 
                 onClick={() => toggleFavorite(selectedItem)}
