@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
+export const runtime = "edge"; // Cloudflare用
 
 const clean = (value: string | undefined) => (value || "").replace(/["'\r\n\s]/g, "").trim();
 
@@ -23,40 +24,34 @@ export async function GET(request: Request) {
   const supabase = createServerSupabase();
 
   // ==========================================
-  // 【ステップ1】まずはSupabaseから爆速で読み込む
+  // 【ステップ1】Supabaseから読み込む（本番のメイン処理）
   // ==========================================
   if (supabase) {
     try {
       let query = supabase.from("products").select("*");
 
-      // キーワード検索（商品名 または カテゴリ）
       if (keyword && keyword !== "人気") {
         query = query.or(`name.ilike.%${keyword}%,category.ilike.%${keyword}%`);
       }
 
-      // 価格上限の絞り込み
       if (maxPrice > 0) {
         query = query.lte("price", maxPrice);
       }
 
-      // ユーザーの指示通り「高い順」は price DESC に変換
       if (sort === "+itemprice") {
-        query = query.order("price", { ascending: true }); // 安い順
+        query = query.order("price", { ascending: true });
       } else if (sort === "-itemprice") {
-        query = query.order("price", { ascending: false }); // 高い順
+        query = query.order("price", { ascending: false });
       } else {
-        query = query.order("updated_at", { ascending: false }); // おすすめ（新着順）
+        query = query.order("rating", { ascending: false }).order("reviews", { ascending: false });
       }
 
-      // ページネーション（1ページ30件）
       const limit = 30;
       const from = (page - 1) * limit;
       const to = from + limit - 1;
-      query = query.range(from, to);
+      const { data, error } = await query.range(from, to);
 
-      const { data, error } = await query;
-
-      // Supabaseにデータが存在すれば、楽天APIを叩かずに即返す！（無限スクロール対応）
+      // Supabaseにデータが存在すれば返す
       if (!error && data && data.length > 0) {
         return NextResponse.json({ items: data }, { headers: { "Cache-Control": "no-store" } });
       }
@@ -66,14 +61,15 @@ export async function GET(request: Request) {
   }
 
   // ==========================================
-  // 【ステップ2】Supabaseにデータが無い場合のみ楽天APIにフォールバック
+  // 【ステップ2】楽天APIへのフォールバック
+  // ※ Cloudflare(本番)ではIP制限で弾かれるため、エラーを出さずに空の配列を返します。
   // ==========================================
   const appId = clean(process.env.RAKUTEN_APP_ID);
   const accessKey = clean(process.env.RAKUTEN_ACCESS_KEY);
   const affiliateId = clean(process.env.RAKUTEN_AFFILIATE_ID);
 
   if (!appId || !accessKey) {
-    return NextResponse.json({ success: false, error: "楽天APP IDまたはAccess Keyが設定されていません" }, { status: 500 });
+    return NextResponse.json({ items: [] }); // エラーにせず空を返す
   }
 
   let rakutenSort = "standard";
@@ -97,8 +93,11 @@ export async function GET(request: Request) {
     });
     
     const payload = await response.json();
+    
+    // 【重要】IP制限などで弾かれた場合はエラー画面にせず、安全に空リストを返す
     if (!response.ok || !payload.Items) {
-      return NextResponse.json({ success: false, error: "楽天APIエラー", details: payload }, { status: 502 });
+      console.warn("楽天APIへのアクセスが制限されました (CloudflareのIP等)。Supabaseのデータのみを表示します。");
+      return NextResponse.json({ items: [] }); 
     }
 
     const items = payload.Items.map((itemData: any) => {
@@ -118,6 +117,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ items }, { headers: { "Cache-Control": "no-store" } });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    // 通信エラー時もサイトを壊さない
+    return NextResponse.json({ items: [] });
   }
 }
