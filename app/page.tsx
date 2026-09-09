@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { 
   ShoppingBag, ShieldCheck, Loader2, Star, Store, Search, Home, 
-  User, Clock, Menu, X, Heart, Bell, Settings, Ticket, Trophy, Globe, ArrowDownUp,
+  User, Clock, Menu, X, Heart, Bell, Settings, Ticket, Trophy, Globe, ArrowDownUp, ArrowUp,
   ShoppingCart, Package, AlertTriangle, Tv, Shirt, Sparkles, Utensils, Car, Smartphone, Grid,
   HelpCircle, Mail, FileText, ChevronDown, ChevronUp, Trash2, Cat, Dog, Ghost, Smile, Crown, Rocket
 } from "lucide-react";
@@ -55,6 +55,9 @@ export default function KattaTsumoriApp() {
 
   const [isCategoryExpanded, setIsCategoryExpanded] = useState(false);
   const [isBottomCategoryOpen, setIsBottomCategoryOpen] = useState(false);
+  
+  // 【追加】スクロールトップボタンの表示状態
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -85,7 +88,6 @@ export default function KattaTsumoriApp() {
 
   const activeBanners = AD_BANNERS ? AD_BANNERS.filter((b: any) => b.isActive) : [];
 
-  // 【重要】スマホのシークレットタブ等でlocalStorageがエラーになるのを防ぐラッパー関数
   const safeStorage = {
     get: (key: string) => { try { return localStorage.getItem(key); } catch(e) { return null; } },
     set: (key: string, value: string) => { try { localStorage.setItem(key, value); } catch(e) {} },
@@ -168,18 +170,12 @@ export default function KattaTsumoriApp() {
     }
   };
 
-  // ========================================================
-  // 【重要】microCMSの読み込み処理（ハイブリッド設計）
-  // ========================================================
   useEffect(() => {
     const fetchCmsPages = async () => {
-      // 1. まずは環境変数の読み込みを試みる
-      // 2. 取れなかった場合のみ、右側の "YOUR_MICROCMS_DOMAIN" を参照する
-      // ⚠️ 万が一に備え、"YOUR..." の部分をご自身のキーに書き換えておくと完璧です。
+      // ⚠️ ここにご自身のmicroCMSの情報を貼り付けてください
       const domain = process.env.NEXT_PUBLIC_MICROCMS_SERVICE_DOMAIN || "YOUR_MICROCMS_DOMAIN"; 
       const apiKey = process.env.NEXT_PUBLIC_MICROCMS_API_KEY || "YOUR_MICROCMS_API_KEY";
 
-      // domainが未設定（初期値のまま）なら処理を安全に中断
       if (!domain || !apiKey || domain === "YOUR_MICROCMS_DOMAIN") return;
 
       try {
@@ -288,14 +284,55 @@ export default function KattaTsumoriApp() {
     }
   };
 
+  // ========================================================
+  // 【修正】ダミー廃止！リアルな妄想決済履歴から15選を取得
+  // ========================================================
   useEffect(() => {
     const fetchTrending = async () => {
       try {
-        const { data } = await supabase.from("products")
+        // 1. 直近の購入履歴(order_items)から新しい順に多めに取得
+        const { data: recentOrders, error } = await supabase
+          .from("order_items")
+          .select("item_id")
+          .order("id", { ascending: false }) // 新しい決済順
+          .limit(40);
+
+        if (!error && recentOrders && recentOrders.length > 0) {
+           // 重複をなくして直近の15件を抽出
+           const uniqueIds = Array.from(new Set(recentOrders.map(o => o.item_id))).slice(0, 15);
+           
+           if (uniqueIds.length > 0) {
+             // 該当する商品の詳細を取得
+             const { data: productDetails } = await supabase
+               .from("products")
+               .select("*")
+               .in("id", uniqueIds);
+
+             if (productDetails && productDetails.length > 0) {
+               // 買われた新しい順番をキープしたままマッピング
+               const mappedItems = uniqueIds
+                 .map(id => productDetails.find(p => String(p.id) === String(id)))
+                 .filter(Boolean)
+                 .map(mapProduct);
+               
+               if (mappedItems.length > 0) {
+                 setTrendingItems(mappedItems);
+                 return; // リアルデータの取得に成功したらここで終了！
+               }
+             }
+           }
+        }
+
+        // 2. まだ誰も決済していない（履歴が0件の）場合のみ、ダミーをフォールバックとして表示
+        const { data: fallbackData } = await supabase
+          .from("products")
           .select("*")
-          .order("reviews", { ascending: false }).order("rating", { ascending: false }).limit(10);
-        if (data) {
-          setTrendingItems(data.map(mapProduct));
+          .order("reviews", { ascending: false })
+          .order("rating", { ascending: false })
+          .limit(15);
+          
+        if (fallbackData) {
+          setTrendingItems(fallbackData.map(mapProduct));
         }
       } catch(e) {}
     };
@@ -304,9 +341,20 @@ export default function KattaTsumoriApp() {
 
   useEffect(() => { fetchProducts(currentKeyword, 1, true, sortOrder, maxPrice); }, [ageGroup, gender]);
 
+  // ========================================================
+  // 【修正】スクロール監視とトップに戻るボタンの表示判定
+  // ========================================================
   useEffect(() => {
     const handleScroll = () => {
       if (view !== "SHOP") return;
+
+      // 800px以上スクロールしたらボタンを表示
+      if (window.scrollY > 800) {
+        setShowScrollTop(true);
+      } else {
+        setShowScrollTop(false);
+      }
+
       if (window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - 300) {
         if (!isLoadingMain && !isLoadingMore && hasMoreProducts && items.length > 0) {
           const nextPage = currentPage + 1;
@@ -323,7 +371,7 @@ export default function KattaTsumoriApp() {
     setTimeout(() => {
       const element = document.getElementById("product-list-top");
       if (element) {
-        const y = element.getBoundingClientRect().top + window.scrollY - 80;
+        const y = element.getBoundingClientRect().top + window.scrollY - 80; // 検索バー等ヘッダー分を引く
         window.scrollTo({ top: y, behavior: 'smooth' });
       }
     }, 100);
@@ -485,7 +533,7 @@ export default function KattaTsumoriApp() {
   if (!isHistoryLoaded) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans flex justify-center">
+    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans flex justify-center relative">
       
       <aside className="hidden lg:block w-72 h-screen sticky top-0 border-r border-gray-200 bg-white p-2">
         <MenuContent />
@@ -493,6 +541,19 @@ export default function KattaTsumoriApp() {
 
       <main className="w-full max-w-md bg-white min-h-screen relative shadow-xl flex flex-col lg:border-r border-gray-200 pb-[72px] lg:pb-0">
         
+        {/* ===================================================== */}
+        {/* 【追加】スクロールトップに戻るボタン（BottomNavの斜め右上） */}
+        {/* ===================================================== */}
+        {showScrollTop && view === "SHOP" && (
+          <button 
+            onClick={scrollToProducts} 
+            className="fixed bottom-[88px] right-5 z-40 bg-white/95 backdrop-blur border border-gray-200 w-12 h-12 rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.15)] hover:scale-110 active:scale-95 transition-all flex items-center justify-center group"
+            aria-label="商品トップへ戻る"
+          >
+            <ArrowUp className="w-6 h-6 text-gray-400 group-hover:text-red-600 transition" />
+          </button>
+        )}
+
         {isMenuOpen && (
           <div className="fixed inset-0 z-[100] lg:hidden flex">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsMenuOpen(false)}></div>
@@ -831,7 +892,6 @@ export default function KattaTsumoriApp() {
             </div>
           )}
 
-          {/* ▼修正ポイント：商品詳細ページ。改行もそのままフル表示し、下までスクロールできるように変更！ */}
           {view === "DETAIL" && selectedItem && (
             <div className="animate-in fade-in slide-in-from-right-4 bg-white min-h-screen pb-32 relative">
               <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-80 object-cover bg-gray-50 border-b border-gray-200" />
