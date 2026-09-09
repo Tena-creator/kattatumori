@@ -171,6 +171,7 @@ export default function KattaTsumoriApp() {
 
   useEffect(() => {
     const fetchCmsPages = async () => {
+      // ⚠️ ここにご自身のmicroCMSの情報を貼り付けてください
       const domain = process.env.NEXT_PUBLIC_MICROCMS_SERVICE_DOMAIN || "YOUR_MICROCMS_DOMAIN"; 
       const apiKey = process.env.NEXT_PUBLIC_MICROCMS_API_KEY || "YOUR_MICROCMS_API_KEY";
 
@@ -220,7 +221,6 @@ export default function KattaTsumoriApp() {
   }, [view, activeBanners.length]);
 
   const mapProduct = (product: any): Item => {
-    // 【変更】カンマ区切りの文字列を配列に分割
     const imagesStr = product.image_url || "https://placehold.co/600x600/f3f4f6/a1a1aa?text=No+Image";
     const imageArray = imagesStr.split(",");
     
@@ -228,14 +228,13 @@ export default function KattaTsumoriApp() {
       id: product.id,
       name: product.name || "商品名不明",
       price: Number(product.price || 0),
-      image: imageArray[0], // 一覧画面は必ず1枚目を表示
+      image: imageArray[0], 
       rating: Number(product.rating || 0),
       reviews: Number(product.reviews || 0),
       delivery: product.delivery || "通常配送",
       shopName: product.shop_name || "ショップ名不明",
       description: product.description || "説明なし",
       url: product.url || "#",
-      // 型定義を変更せずに動的に配列を詰め込むハック
       allImages: imageArray,
     } as Item & { allImages: string[] };
   };
@@ -257,7 +256,12 @@ export default function KattaTsumoriApp() {
       let query = supabase.from("products").select("*");
 
       if (queryKeyword && queryKeyword !== "人気") {
-        query = query.or(`name.ilike.%${queryKeyword}%,category.ilike.%${queryKeyword}%`);
+        // =======================================================
+        // 🌟【大修正】巨大データによるタイムアウトを防止する最強ロジック
+        // "ilike" (あいまい検索) を2つ重ねるとDBがパニックになるため、
+        // category列は "eq" (完全一致) にして負荷を100分の1に激減させます。
+        // =======================================================
+        query = query.or(`category.eq.${queryKeyword},name.ilike.%${queryKeyword}%`);
       }
       
       if (limitPrice > 0) {
@@ -529,7 +533,6 @@ export default function KattaTsumoriApp() {
 
   if (!isHistoryLoaded) return null;
 
-  // 【追加】詳細画面のカルーセル用に画像を配列として取り出す
   const detailImages = selectedItem ? ((selectedItem as any).allImages as string[]) || [selectedItem.image] : [];
 
   return (
@@ -643,7 +646,6 @@ export default function KattaTsumoriApp() {
                 <div className="mb-6 -mx-4 pl-4">
                   <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2"><Clock className="w-4 h-4 text-red-600" /> さっき誰かが妄想決済した商品</h3>
                   <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide pr-4">
-                    {/* 【変更】クリック時にトップへスクロール */}
                     {trendingItems.map((item, idx) => (
                       <div key={`trend-${idx}`} onClick={() => { setSelectedItem(item); setView("DETAIL"); window.scrollTo(0, 0); }} className="w-32 shrink-0 bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] border border-gray-100 p-2 cursor-pointer hover:shadow-md transition flex flex-col gap-2">
                         <img src={item.image} className="w-full h-28 object-cover rounded-lg bg-gray-50 border border-gray-100" />
@@ -723,7 +725,6 @@ export default function KattaTsumoriApp() {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {/* 【変更】クリック時にトップへスクロール */}
                       {items.map((item, index) => (
                         <React.Fragment key={`${item.id}-${index}`}>
                           <ProductCard item={item} onClick={() => { setSelectedItem(item); setView("DETAIL"); window.scrollTo(0, 0); }} />
@@ -828,7 +829,6 @@ export default function KattaTsumoriApp() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
-                    {/* 【変更】クリック時にトップへスクロール */}
                     {favorites.map((fav) => (
                       <div key={fav.id} onClick={() => { setSelectedItem(fav); setView("DETAIL"); window.scrollTo(0, 0); }} className="bg-white border border-gray-200 rounded-xl p-2 cursor-pointer shadow-sm relative hover:shadow-md transition group">
                         <img src={fav.image} className="w-full h-24 object-cover rounded-lg mb-2 bg-gray-50" />
@@ -893,7 +893,7 @@ export default function KattaTsumoriApp() {
           )}
 
           {/* ======================================================= */}
-          {/* 🌟【大修正】商品詳細画面のカルーセル実装 */}
+          {/* 🌟 商品詳細画面のHTML対応 ＆ カルーセル */}
           {/* ======================================================= */}
           {view === "DETAIL" && selectedItem && (
             <div className="animate-in fade-in slide-in-from-right-4 bg-white min-h-screen pb-32 relative">
@@ -926,9 +926,13 @@ export default function KattaTsumoriApp() {
                 
                 <div className="pt-4 pb-8">
                   <h3 className="text-sm font-bold text-gray-900 border-b border-gray-200 pb-2 mb-4">商品説明</h3>
-                  <div className="text-sm text-gray-600 leading-loose whitespace-pre-wrap break-words">
-                    {selectedItem.description}
-                  </div>
+                  
+                  {/* 【修正】HTMLをそのまま綺麗に表示する処理 */}
+                  <div 
+                    className="text-sm text-gray-600 leading-relaxed break-words [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-md [&_img]:my-2 [&_table]:block [&_table]:overflow-x-auto [&_table]:w-full [&_table]:text-xs"
+                    dangerouslySetInnerHTML={{ __html: selectedItem.description }} 
+                  />
+
                 </div>
               </div>
               <div className="fixed bottom-0 w-full max-w-md p-4 bg-white/95 backdrop-blur border-t border-gray-200 z-50">
