@@ -171,7 +171,6 @@ export default function KattaTsumoriApp() {
 
   useEffect(() => {
     const fetchCmsPages = async () => {
-      // ⚠️ ここにご自身のmicroCMSの情報を貼り付けてください
       const domain = process.env.NEXT_PUBLIC_MICROCMS_SERVICE_DOMAIN || "YOUR_MICROCMS_DOMAIN"; 
       const apiKey = process.env.NEXT_PUBLIC_MICROCMS_API_KEY || "YOUR_MICROCMS_API_KEY";
 
@@ -256,11 +255,6 @@ export default function KattaTsumoriApp() {
       let query = supabase.from("products").select("*");
 
       if (queryKeyword && queryKeyword !== "人気") {
-        // =======================================================
-        // 🌟【大修正】巨大データによるタイムアウトを防止する最強ロジック
-        // "ilike" (あいまい検索) を2つ重ねるとDBがパニックになるため、
-        // category列は "eq" (完全一致) にして負荷を100分の1に激減させます。
-        // =======================================================
         query = query.or(`category.eq.${queryKeyword},name.ilike.%${queryKeyword}%`);
       }
       
@@ -409,6 +403,11 @@ export default function KattaTsumoriApp() {
   };
 
   const addToCart = (item: Item) => { setCart([...cart, item]); setView("SHOP"); };
+  
+  // 【追加】カートから商品を削除する機能
+  const removeFromCart = (indexToRemove: number) => {
+    setCart(cart.filter((_, index) => index !== indexToRemove));
+  };
 
   const handleAddressSubmit = () => {
     if (name.trim().length < 2 || address.trim().length < 2) return setAddressError("※氏名と住所は2文字以上で入力してください。");
@@ -892,9 +891,6 @@ export default function KattaTsumoriApp() {
             </div>
           )}
 
-          {/* ======================================================= */}
-          {/* 🌟 商品詳細画面のHTML対応 ＆ カルーセル */}
-          {/* ======================================================= */}
           {view === "DETAIL" && selectedItem && (
             <div className="animate-in fade-in slide-in-from-right-4 bg-white min-h-screen pb-32 relative">
               
@@ -926,13 +922,10 @@ export default function KattaTsumoriApp() {
                 
                 <div className="pt-4 pb-8">
                   <h3 className="text-sm font-bold text-gray-900 border-b border-gray-200 pb-2 mb-4">商品説明</h3>
-                  
-                  {/* 【修正】HTMLをそのまま綺麗に表示する処理 */}
                   <div 
                     className="text-sm text-gray-600 leading-relaxed break-words [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-md [&_img]:my-2 [&_table]:block [&_table]:overflow-x-auto [&_table]:w-full [&_table]:text-xs"
                     dangerouslySetInnerHTML={{ __html: selectedItem.description }} 
                   />
-
                 </div>
               </div>
               <div className="fixed bottom-0 w-full max-w-md p-4 bg-white/95 backdrop-blur border-t border-gray-200 z-50">
@@ -944,6 +937,9 @@ export default function KattaTsumoriApp() {
             </div>
           )}
 
+          {/* ======================================================= */}
+          {/* 🗑️ 【修正】カート画面に削除ボタン（ゴミ箱）を追加 */}
+          {/* ======================================================= */}
           {view === "CART" && (
             <div className="space-y-6 p-4 animate-in fade-in slide-in-from-right-4 pb-12 flex flex-col h-full">
               <div>
@@ -953,9 +949,20 @@ export default function KattaTsumoriApp() {
                 ) : (
                   <div className="space-y-4">
                     {cart.map((item, i) => (
-                      <div key={i} className="flex gap-4 items-center bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+                      <div key={i} className="flex gap-4 items-center bg-white p-3 rounded-xl border border-gray-200 shadow-sm relative group">
                         <img src={item.image} className="w-20 h-20 object-cover rounded-lg shrink-0 bg-gray-50" />
-                        <div className="flex-1 flex flex-col justify-between h-20"><span className="font-medium text-sm line-clamp-2 text-gray-900">{item.name}</span><div className="text-red-600 font-bold text-lg">¥{item.price.toLocaleString()}</div></div>
+                        <div className="flex-1 flex flex-col justify-between h-20 pr-6">
+                          <span className="font-medium text-sm line-clamp-2 text-gray-900">{item.name}</span>
+                          <div className="text-red-600 font-bold text-lg">¥{item.price.toLocaleString()}</div>
+                        </div>
+                        {/* ▼ 削除ボタン */}
+                        <button 
+                          onClick={() => removeFromCart(i)} 
+                          className="absolute top-2 right-2 p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition"
+                          aria-label="削除"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     ))}
                     <div className="flex justify-between items-end pt-4 border-t border-gray-200 mt-6 px-2"><span className="text-gray-500 font-medium">合計</span><span className="text-red-600 font-bold text-3xl">¥{totalAmount.toLocaleString()}</span></div>
@@ -1122,8 +1129,22 @@ export default function KattaTsumoriApp() {
             <p className="text-sm text-gray-500 text-center py-4">かごは空です</p>
           ) : (
             <div className="space-y-3">
+              {/* 🗑️ 【修正】PC版ミニカートにも削除ボタン（✕）を追加 */}
               {cart.slice(0, 3).map((item, i) => (
-                <div key={i} className="flex gap-3 items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0"><img src={item.image} className="w-12 h-12 rounded object-cover border border-gray-200" /><div className="flex-1 overflow-hidden"><p className="text-xs text-gray-700 truncate">{item.name}</p><p className="font-bold text-sm text-red-600">¥{item.price.toLocaleString()}</p></div></div>
+                <div key={i} className="flex gap-3 items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0 relative group">
+                  <img src={item.image} className="w-12 h-12 rounded object-cover border border-gray-200" />
+                  <div className="flex-1 overflow-hidden pr-6">
+                    <p className="text-xs text-gray-700 truncate">{item.name}</p>
+                    <p className="font-bold text-sm text-red-600">¥{item.price.toLocaleString()}</p>
+                  </div>
+                  <button 
+                    onClick={() => removeFromCart(i)} 
+                    className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500 transition"
+                    aria-label="削除"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               ))}
               {cart.length > 3 && <p className="text-xs text-center text-gray-400 pt-2">他 {cart.length - 3} 件</p>}
               <div className="pt-3 border-t border-gray-200 flex justify-between items-center font-bold text-gray-900"><span>合計</span><span className="text-red-600 text-lg">¥{totalAmount.toLocaleString()}</span></div>
