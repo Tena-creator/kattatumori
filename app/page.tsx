@@ -85,51 +85,68 @@ export default function KattaTsumoriApp() {
 
   const activeBanners = AD_BANNERS ? AD_BANNERS.filter((b: any) => b.isActive) : [];
 
+  // 【重要】スマホのシークレットタブ等でlocalStorageがエラーになるのを防ぐラッパー関数
+  const safeStorage = {
+    get: (key: string) => { try { return localStorage.getItem(key); } catch(e) { return null; } },
+    set: (key: string, value: string) => { try { localStorage.setItem(key, value); } catch(e) {} },
+    remove: (key: string) => { try { localStorage.removeItem(key); } catch(e) {} }
+  };
+
   useEffect(() => {
     const initSupabase = async () => {
-      let storedUserId = localStorage.getItem("kattatsumori_userId");
-      const storedName = localStorage.getItem("kattatsumori_profileName");
-      const storedIcon = localStorage.getItem("kattatsumori_profileIcon") as keyof typeof ICONS;
+      let storedUserId = safeStorage.get("kattatsumori_userId");
+      const storedName = safeStorage.get("kattatsumori_profileName");
+      const storedIcon = safeStorage.get("kattatsumori_profileIcon") as keyof typeof ICONS;
       
       if (storedName) setProfileName(storedName);
       if (storedIcon && ICONS[storedIcon]) setProfileIcon(storedIcon);
 
       if (!storedUserId) {
         storedUserId = generateUUID();
-        localStorage.setItem("kattatsumori_userId", storedUserId);
-        await supabase.from('profiles').insert([{ id: storedUserId }]);
+        safeStorage.set("kattatsumori_userId", storedUserId);
+        try {
+          await supabase.from('profiles').insert([{ id: storedUserId }]);
+        } catch(e) {}
       } else {
-        const { data } = await supabase.from('profiles').select('*').eq('id', storedUserId).single();
-        if (data) {
-          setAgeGroup(data.age_group || "");
-          setGender(data.gender || "");
-        }
+        try {
+          const { data } = await supabase.from('profiles').select('*').eq('id', storedUserId).single();
+          if (data) {
+            setAgeGroup(data.age_group || "");
+            setGender(data.gender || "");
+          }
+        } catch(e) {}
       }
       setUserId(storedUserId);
 
-      const { data: favData } = await supabase.from('favorites').select('*').eq('user_id', storedUserId);
-      if (favData) {
-        const mappedFavs = favData.map(f => ({
-          id: f.item_id, name: f.item_name, price: f.price, image: f.image_url,
-          rating: 0, reviews: 0, delivery: "", shopName: "", description: "", url: ""
-        }));
-        setFavorites(mappedFavs);
-      }
+      try {
+        const { data: favData } = await supabase.from('favorites').select('*').eq('user_id', storedUserId);
+        if (favData) {
+          const mappedFavs = favData.map(f => ({
+            id: f.item_id, name: f.item_name, price: f.price, image: f.image_url,
+            rating: 0, reviews: 0, delivery: "", shopName: "", description: "", url: ""
+          }));
+          setFavorites(mappedFavs);
+        }
+      } catch(e) {}
 
-      const { data: ordersData } = await supabase.from('orders').select('total_amount').limit(3000);
-      if (ordersData) {
-        const sum = ordersData.reduce((acc, order) => acc + Number(order.total_amount || 0), 0);
-        setGlobalSales(APP_CONFIG.globalBaseSales + sum);
-      }
+      try {
+        const { data: ordersData } = await supabase.from('orders').select('total_amount').limit(3000);
+        if (ordersData) {
+          const sum = ordersData.reduce((acc, order) => acc + Number(order.total_amount || 0), 0);
+          setGlobalSales(APP_CONFIG.globalBaseSales + sum);
+        }
+      } catch(e) {}
     };
     initSupabase();
   }, []);
 
   const handleSaveProfile = async () => {
-    localStorage.setItem("kattatsumori_profileName", profileName || "ゲスト");
-    localStorage.setItem("kattatsumori_profileIcon", profileIcon);
+    safeStorage.set("kattatsumori_profileName", profileName || "ゲスト");
+    safeStorage.set("kattatsumori_profileIcon", profileIcon);
     if (userId) {
-      await supabase.from('profiles').update({ age_group: ageGroup, gender: gender }).eq('id', userId);
+      try {
+        await supabase.from('profiles').update({ age_group: ageGroup, gender: gender }).eq('id', userId);
+      } catch(e) {}
     }
     setIsEditingProfile(false);
     fetchProducts(currentKeyword, 1, true, sortOrder, maxPrice);
@@ -140,27 +157,35 @@ export default function KattaTsumoriApp() {
     const isFav = favorites.some(f => f.id === item.id);
     if (isFav) {
       setFavorites(favorites.filter(f => f.id !== item.id));
-      await supabase.from('favorites').delete().eq('user_id', userId).eq('item_id', item.id);
+      try { await supabase.from('favorites').delete().eq('user_id', userId).eq('item_id', item.id); } catch(e) {}
     } else {
       setFavorites([...favorites, item]);
-      await supabase.from('favorites').insert([{
-        user_id: userId, item_id: item.id, item_name: item.name, price: item.price, image_url: item.image
-      }]);
+      try {
+        await supabase.from('favorites').insert([{
+          user_id: userId, item_id: item.id, item_name: item.name, price: item.price, image_url: item.image
+        }]);
+      } catch(e) {}
     }
   };
 
   // ========================================================
-  // 【修正点】microCMSの鍵もハードコードして読み込みを確定させる
+  // 【重要】microCMSの読み込み処理（ハイブリッド設計）
   // ========================================================
   useEffect(() => {
     const fetchCmsPages = async () => {
-      // ⚠️ ここにご自身のmicroCMSの情報を貼り付けてください
-      const domain = "dopamine-rush"; 
-      const apiKey = "2I0UjWaGzefmy2355esPBlZnNwVH5tWzVOEl";
+      // 1. まずは環境変数の読み込みを試みる
+      // 2. 取れなかった場合のみ、右側の "YOUR_MICROCMS_DOMAIN" を参照する
+      // ⚠️ 万が一に備え、"YOUR..." の部分をご自身のキーに書き換えておくと完璧です。
+      const domain = process.env.NEXT_PUBLIC_MICROCMS_SERVICE_DOMAIN || "YOUR_MICROCMS_DOMAIN"; 
+      const apiKey = process.env.NEXT_PUBLIC_MICROCMS_API_KEY || "YOUR_MICROCMS_API_KEY";
 
+      // domainが未設定（初期値のまま）なら処理を安全に中断
       if (!domain || !apiKey || domain === "YOUR_MICROCMS_DOMAIN") return;
+
       try {
-        const res = await fetch(`https://${domain}.microcms.io/api/v1/pages?limit=10`, { headers: { "X-MICROCMS-API-KEY": apiKey } });
+        const res = await fetch(`https://${domain}.microcms.io/api/v1/pages?limit=10`, { 
+          headers: { "X-MICROCMS-API-KEY": apiKey } 
+        });
         const data = await res.json();
         if (data.contents) {
           const pagesMap: Record<string, { title: string; content: string }> = {};
@@ -175,9 +200,9 @@ export default function KattaTsumoriApp() {
   }, []);
 
   useEffect(() => {
-    const savedHistory = localStorage.getItem("kattatsumori_orderHistory");
-    const savedLifetimeAmt = localStorage.getItem("kattatsumori_lifetimeAmt");
-    const savedLifetimeOrd = localStorage.getItem("kattatsumori_lifetimeOrd");
+    const savedHistory = safeStorage.get("kattatsumori_orderHistory");
+    const savedLifetimeAmt = safeStorage.get("kattatsumori_lifetimeAmt");
+    const savedLifetimeOrd = safeStorage.get("kattatsumori_lifetimeOrd");
     if (savedHistory) try { setOrderHistory(JSON.parse(savedHistory)); } catch (e) {}
     if (savedLifetimeAmt) setLifetimeAmount(Number(savedLifetimeAmt));
     if (savedLifetimeOrd) setLifetimeOrders(Number(savedLifetimeOrd));
@@ -265,12 +290,14 @@ export default function KattaTsumoriApp() {
 
   useEffect(() => {
     const fetchTrending = async () => {
-      const { data } = await supabase.from("products")
-        .select("*")
-        .order("reviews", { ascending: false }).order("rating", { ascending: false }).limit(10);
-      if (data) {
-        setTrendingItems(data.map(mapProduct));
-      }
+      try {
+        const { data } = await supabase.from("products")
+          .select("*")
+          .order("reviews", { ascending: false }).order("rating", { ascending: false }).limit(10);
+        if (data) {
+          setTrendingItems(data.map(mapProduct));
+        }
+      } catch(e) {}
     };
     fetchTrending();
   }, []);
@@ -353,13 +380,13 @@ export default function KattaTsumoriApp() {
     if (window.confirm("この妄想履歴を削除しますか？\n（※全世界売上への貢献額はキープされます）")) {
       const updatedHistory = orderHistory.filter(o => o.id !== orderId);
       setOrderHistory(updatedHistory);
-      localStorage.setItem("kattatsumori_orderHistory", JSON.stringify(updatedHistory));
+      safeStorage.set("kattatsumori_orderHistory", JSON.stringify(updatedHistory));
     }
   };
 
   const handleResetHistory = () => {
     if (window.confirm("購入履歴をすべて消去しますか？\n（※全世界売上への貢献額はキープされます！）")) {
-      localStorage.removeItem("kattatsumori_orderHistory");
+      safeStorage.remove("kattatsumori_orderHistory");
       setOrderHistory([]);
     }
   };
@@ -372,25 +399,27 @@ export default function KattaTsumoriApp() {
         const newOrder: Order = { id: `ORD-${Date.now()}`, date: new Date().toLocaleString('ja-JP'), items: [...cart], total: totalAmount, payMethod: payMethod };
         const updatedHistory = [newOrder, ...orderHistory];
         setOrderHistory(updatedHistory);
-        localStorage.setItem("kattatsumori_orderHistory", JSON.stringify(updatedHistory));
+        safeStorage.set("kattatsumori_orderHistory", JSON.stringify(updatedHistory));
         
         const newLifetimeAmt = lifetimeAmount + totalAmount;
         const newLifetimeOrd = lifetimeOrders + 1;
         setLifetimeAmount(newLifetimeAmt); setLifetimeOrders(newLifetimeOrd);
-        localStorage.setItem("kattatsumori_lifetimeAmt", String(newLifetimeAmt));
-        localStorage.setItem("kattatsumori_lifetimeOrd", String(newLifetimeOrd));
+        safeStorage.set("kattatsumori_lifetimeAmt", String(newLifetimeAmt));
+        safeStorage.set("kattatsumori_lifetimeOrd", String(newLifetimeOrd));
 
         setGlobalSales(prev => prev + totalAmount);
 
         if (userId) {
-          const { data: orderData } = await supabase.from('orders').insert([{ user_id: userId, total_amount: totalAmount }]).select().single();
-          if (orderData) {
-            const orderItems = cart.map(item => ({
-              order_id: orderData.id, item_id: item.id, item_name: item.name, price: item.price
-            }));
-            await supabase.from('order_items').insert(orderItems);
-          }
-          await supabase.from('profiles').update({ lifetime_amount: newLifetimeAmt }).eq('id', userId);
+          try {
+            const { data: orderData } = await supabase.from('orders').insert([{ user_id: userId, total_amount: totalAmount }]).select().single();
+            if (orderData) {
+              const orderItems = cart.map(item => ({
+                order_id: orderData.id, item_id: item.id, item_name: item.name, price: item.price
+              }));
+              await supabase.from('order_items').insert(orderItems);
+            }
+            await supabase.from('profiles').update({ lifetime_amount: newLifetimeAmt }).eq('id', userId);
+          } catch(e) {}
         }
 
         setCart([]); setName(""); setAddress(""); setPhone(""); setCardNum(""); setCvv(""); setPayMethod("credit");
@@ -802,8 +831,9 @@ export default function KattaTsumoriApp() {
             </div>
           )}
 
+          {/* ▼修正ポイント：商品詳細ページ。改行もそのままフル表示し、下までスクロールできるように変更！ */}
           {view === "DETAIL" && selectedItem && (
-            <div className="animate-in fade-in slide-in-from-right-4 bg-white min-h-screen pb-24 relative">
+            <div className="animate-in fade-in slide-in-from-right-4 bg-white min-h-screen pb-32 relative">
               <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-80 object-cover bg-gray-50 border-b border-gray-200" />
               
               <button 
@@ -818,7 +848,13 @@ export default function KattaTsumoriApp() {
                 <h2 className="text-lg font-medium leading-relaxed text-gray-900">{selectedItem.name}</h2>
                 <div className="border-y border-gray-100 py-4 my-4"><span className="text-red-600 font-bold text-3xl">¥{selectedItem.price.toLocaleString()}</span><span className="text-sm text-gray-500 ml-2">送料無料</span></div>
                 <div className="bg-gray-50 p-4 rounded-xl text-sm text-gray-700"><p className="font-bold text-red-600 mb-2">{selectedItem.delivery}</p><div className="flex items-center mt-2 border-t border-gray-200 pt-2"><Store className="w-4 h-4 mr-2 text-gray-500" />{selectedItem.shopName}</div></div>
-                <div className="text-sm text-gray-600 leading-relaxed pt-2 pb-8 line-clamp-6">{selectedItem.description}</div>
+                
+                <div className="pt-4 pb-8">
+                  <h3 className="text-sm font-bold text-gray-900 border-b border-gray-200 pb-2 mb-4">商品説明</h3>
+                  <div className="text-sm text-gray-600 leading-loose whitespace-pre-wrap break-words">
+                    {selectedItem.description}
+                  </div>
+                </div>
               </div>
               <div className="fixed bottom-0 w-full max-w-md p-4 bg-white/95 backdrop-blur border-t border-gray-200 z-50">
                 <div className="flex gap-3">
