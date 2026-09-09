@@ -211,6 +211,7 @@ export default function KattaTsumoriApp() {
     id: product.id,
     name: product.name || "商品名不明",
     price: Number(product.price || 0),
+    // ここで image_url を image に変換しています
     image: product.image_url || "https://placehold.co/600x600/f3f4f6/a1a1aa?text=No+Image",
     rating: Number(product.rating || 0),
     reviews: Number(product.reviews || 0),
@@ -228,46 +229,22 @@ export default function KattaTsumoriApp() {
     return `${keyword} ${ageStr} ${genderStr}`.trim();
   };
 
-  const applyLocalSort = (products: Item[], sort: string) => [...products].sort((a, b) => {
-    if (sort === "+itemPrice") return a.price - b.price;
-    if (sort === "-itemPrice") return b.price - a.price;
-    return (b.rating * Math.max(b.reviews, 1)) - (a.rating * Math.max(a.reviews, 1));
-  });
-
+  // ==========================================
+  // 【修正】フェッチしたデータをmapProductに通して画像URLを正しくセットする
+  // ==========================================
   const fetchProducts = async (keyword: string, page: number, reset: boolean, sort: string, limitPrice: number) => {
     if (reset) setIsLoadingMain(true); else setIsLoadingMore(true);
-    const pageSize = 30;
     const queryKeyword = getQueryKeyword(keyword).replace(/[%_,()]/g, " ").trim();
     
     try {
-      let query = supabase.from("products").select("id,name,price,image_url,rating,reviews,delivery,shop_name,description,url,category");
-      if (queryKeyword) query = query.or(`name.ilike.%${queryKeyword}%,category.ilike.%${queryKeyword}%`);
-      if (limitPrice > 0) query = query.lte("price", limitPrice);
-
-      if (sort === "+itemPrice") query = query.order("price", { ascending: true });
-      else if (sort === "-itemPrice") query = query.order("price", { ascending: false });
-      else query = query.order("rating", { ascending: false }).order("reviews", { ascending: false });
-
-      const from = (page - 1) * pageSize;
-      const { data, error } = await query.range(from, from + pageSize - 1);
-      if (error) throw error;
-
-      let fetchedItems: Item[] = (data || []).map(mapProduct);
+      const url = `/api/rakuten?keyword=${encodeURIComponent(queryKeyword || keyword)}&page=${page}&sort=${sort}${limitPrice > 0 ? `&maxPrice=${limitPrice}` : ""}`;
+      const response = await fetch(url);
+      const data = await response.json();
       
-      // ▼ ここが修正点です！ page === 1 という制限を撤廃しました。
-      // Supabaseのデータが足りないページ（1ページ目でも2ページ目でも）は常に楽天APIから補充します
-      if (fetchedItems.length < pageSize) {
-        // 楽天APIにも現在のページ数(page)を渡すことで、2ページ目以降の補充も可能に
-        const fallback = await fetch(`/api/rakuten?keyword=${encodeURIComponent(queryKeyword || keyword)}&page=${page}${limitPrice > 0 ? `&maxPrice=${limitPrice}` : ""}`);
-        if (fallback.ok) {
-          const body = await fallback.json();
-          const fallbackItems: Item[] = Array.isArray(body.items) ? body.items.map(mapProduct) : [];
-          const existingIds = new Set(fetchedItems.map((item) => item.id));
-          fetchedItems = applyLocalSort([...fetchedItems, ...fallbackItems.filter((item) => !existingIds.has(item.id))], sort).slice(0, pageSize);
-        }
-      }
-
-      setHasMoreProducts(fetchedItems.length === pageSize);
+      // ★ ここが抜けていました。data.items を mapProduct に通して image を生成します。
+      const fetchedItems: Item[] = Array.isArray(data.items) ? data.items.map(mapProduct) : [];
+      
+      setHasMoreProducts(fetchedItems.length >= 30);
       
       if (reset) setItems(fetchedItems);
       else setItems((previous) => [...previous, ...fetchedItems]);
@@ -291,7 +268,15 @@ export default function KattaTsumoriApp() {
       const { data } = await supabase.from("products")
         .select("id,name,price,image_url,rating,reviews,delivery,shop_name,description,url")
         .order("reviews", { ascending: false }).order("rating", { ascending: false }).limit(10);
-      if (data) setTrendingItems(data.map(mapProduct));
+      if (data) {
+        const mapped = data.map(product => ({
+          id: product.id, name: product.name, price: Number(product.price || 0),
+          image: product.image_url, rating: Number(product.rating || 0),
+          reviews: Number(product.reviews || 0), delivery: product.delivery,
+          shopName: product.shop_name, description: product.description, url: product.url
+        })) as Item[];
+        setTrendingItems(mapped);
+      }
     };
     fetchTrending();
   }, []);
