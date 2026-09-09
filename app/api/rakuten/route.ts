@@ -4,29 +4,38 @@ import { createClient } from "@supabase/supabase-js";
 export const dynamic = "force-dynamic";
 export const runtime = "edge"; 
 
-const clean = (value: string | undefined) => (value || "").replace(/["'\r\n\s]/g, "").trim();
+// 【修正】Cloudflare Edge環境でクラッシュ(500エラー)しないための安全な取得関数
+function safeEnv(key: string) {
+  try {
+    return (typeof process !== "undefined" && process.env[key]) ? process.env[key] : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+const SUPABASE_URL = "https://zugvpxletlutlekskfpk.supabase.co";
+// ⚠️↓こちらもANON_KEYの貼り付けをお願いします
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1Z3ZweGxldGx1dGxla3NrZnBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4Mjc5NjQsImV4cCI6MjEwNDQwMzk2NH0.qhDqujGh7lClpsfAKdEeFpXpZG0VbKrvgs2j-ZGXiy8";
 
 function createServerSupabase() {
-  // プロデューサーの直感通り、NEXT_PUBLIC_なしの変数を最優先で読み込む！
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = safeEnv("SUPABASE_URL") || safeEnv("NEXT_PUBLIC_SUPABASE_URL") || SUPABASE_URL;
+  const key = safeEnv("SUPABASE_ANON_KEY") || safeEnv("SUPABASE_SERVICE_ROLE_KEY") || safeEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY") || SUPABASE_ANON_KEY;
   
-  if (!url || !key) return null;
+  if (!url || key.includes("ここに")) return null;
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const keyword = clean(searchParams.get("keyword") || "人気").slice(0, 128) || "人気";
-  const requestedPage = Number(searchParams.get("page") || "1");
-  const page = Number.isInteger(requestedPage) ? Math.min(Math.max(requestedPage, 1), 100) : 1;
-  const maxPrice = Number(searchParams.get("maxPrice") || "0");
-  const sort = searchParams.get("sort") || "standard";
+  try {
+    const { searchParams } = new URL(request.url);
+    const keyword = (searchParams.get("keyword") || "人気").replace(/["'\r\n\s]/g, "").trim();
+    const page = Number(searchParams.get("page") || "1");
+    const maxPrice = Number(searchParams.get("maxPrice") || "0");
+    const sort = searchParams.get("sort") || "standard";
 
-  const supabase = createServerSupabase();
+    const supabase = createServerSupabase();
 
-  if (supabase) {
-    try {
+    if (supabase) {
       let query = supabase.from("products").select("*");
       if (keyword && keyword !== "人気") query = query.or(`name.ilike.%${keyword}%,category.ilike.%${keyword}%`);
       if (maxPrice > 0) query = query.lte("price", maxPrice);
@@ -43,32 +52,27 @@ export async function GET(request: Request) {
       if (!error && data && data.length > 0) {
         return NextResponse.json({ items: data }, { headers: { "Cache-Control": "no-store" } });
       }
-    } catch (e: any) {
-      console.error("Supabase API error:", e);
     }
-  }
 
-  // 楽天APIフォールバック（IP制限のため空を返すのが基本）
-  const appId = clean(process.env.RAKUTEN_APP_ID);
-  const accessKey = clean(process.env.RAKUTEN_ACCESS_KEY);
-  const affiliateId = clean(process.env.RAKUTEN_AFFILIATE_ID);
-  
-  if (!appId || !accessKey) {
-    return NextResponse.json({ items: [] });
-  }
+    const appId = safeEnv("RAKUTEN_APP_ID");
+    const accessKey = safeEnv("RAKUTEN_ACCESS_KEY");
+    const affiliateId = safeEnv("RAKUTEN_AFFILIATE_ID");
+    
+    if (!appId || !accessKey) {
+      return NextResponse.json({ items: [] }, { headers: { "Cache-Control": "no-store" } });
+    }
 
-  let rakutenSort = "standard";
-  if (sort === "+itemprice") rakutenSort = "+itemPrice";
-  if (sort === "-itemprice") rakutenSort = "-itemPrice";
+    let rakutenSort = "standard";
+    if (sort === "+itemprice") rakutenSort = "+itemPrice";
+    if (sort === "-itemprice") rakutenSort = "-itemPrice";
 
-  const params = new URLSearchParams({
-    format: "json", keyword, applicationId: appId, accessKey: accessKey,
-    page: String(page), hits: "30", imageFlag: "1", sort: rakutenSort
-  });
-  if (affiliateId) params.set("affiliateId", affiliateId);
-  if (maxPrice > 0) params.set("maxPrice", String(maxPrice));
+    const params = new URLSearchParams({
+      format: "json", keyword, applicationId: appId, accessKey: accessKey,
+      page: String(page), hits: "30", imageFlag: "1", sort: rakutenSort
+    });
+    if (affiliateId) params.set("affiliateId", affiliateId);
+    if (maxPrice > 0) params.set("maxPrice", String(maxPrice));
 
-  try {
     const url = `https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260701?${params}`;
     const response = await fetch(url, {
       cache: "no-store",
@@ -78,7 +82,7 @@ export async function GET(request: Request) {
     
     const payload = await response.json();
     if (!response.ok || !payload.Items) {
-      return NextResponse.json({ items: [] });
+      return NextResponse.json({ items: [] }, { headers: { "Cache-Control": "no-store" } });
     }
 
     const items = payload.Items.map((itemData: any) => {
@@ -97,7 +101,9 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({ items }, { headers: { "Cache-Control": "no-store" } });
-  } catch (err: any) {
-    return NextResponse.json({ items: [] });
+  } catch (error: any) {
+    // 【修正】いかなるエラーが発生しても絶対に500エラーを出さず、空リストを返してサイトを守る
+    console.error("API Error Protected:", error);
+    return NextResponse.json({ items: [] }, { headers: { "Cache-Control": "no-store" } });
   }
 }
