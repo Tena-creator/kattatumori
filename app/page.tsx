@@ -30,6 +30,19 @@ function generateUUID() {
 
 const ICONS = { User, Cat, Dog, Ghost, Smile, Crown, Rocket };
 
+type ProductRow = {
+  id: string;
+  name?: string | null;
+  price?: number | string | null;
+  image_url?: string | null;
+  rating?: number | string | null;
+  reviews?: number | string | null;
+  delivery?: string | null;
+  shop_name?: string | null;
+  description?: string | null;
+  url?: string | null;
+};
+
 export default function KattaTsumoriApp() {
   const [view, setView] = useState<ViewState>("SHOP");
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
@@ -47,6 +60,7 @@ export default function KattaTsumoriApp() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoadingMain, setIsLoadingMain] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreProducts, setHasMoreProducts] = useState(true);
   
   const [sortOrder, setSortOrder] = useState("standard");
   const [maxPrice, setMaxPrice] = useState(0);
@@ -69,7 +83,6 @@ export default function KattaTsumoriApp() {
   const [currentBanner, setCurrentBanner] = useState(0);
   
   const [isCheckoutFailed, setIsCheckoutFailed] = useState(false);
-  // ▼ 新しく追加：自動リロード中かどうかのフラグ
   const [isAutoRetrying, setIsAutoRetrying] = useState(false);
 
   const [cmsPages, setCmsPages] = useState<Record<string, { title: string; content: string }>>({});
@@ -133,7 +146,7 @@ export default function KattaTsumoriApp() {
       await supabase.from('profiles').update({ age_group: ageGroup, gender: gender }).eq('id', userId);
     }
     setIsEditingProfile(false);
-    fetchRakutenItems(currentKeyword, 1, true, sortOrder, maxPrice);
+    fetchProducts(currentKeyword, 1, true, sortOrder, maxPrice);
   };
 
   const toggleFavorite = async (item: Item) => {
@@ -194,112 +207,111 @@ export default function KattaTsumoriApp() {
     return () => clearInterval(timer);
   }, [view, activeBanners.length]);
 
-  useEffect(() => {
-    const fetchTrending = async () => {
-      try {
-        let trendKeyword = "高級時計"; 
-        if (ageGroup || gender) {
-           const ageStr = ageGroup ? ageGroup.replace("以上", "") : "";
-           const genderStr = gender !== "その他" ? gender : "";
-           trendKeyword = `人気 ランキング ${ageStr} ${genderStr}`.trim();
-        }
+  const mapProduct = (product: ProductRow): Item => ({
+    id: product.id,
+    name: product.name || "商品名不明",
+    price: Number(product.price || 0),
+    image: product.image_url || "https://placehold.co/600x600/f3f4f6/a1a1aa?text=No+Image",
+    rating: Number(product.rating || 0),
+    reviews: Number(product.reviews || 0),
+    delivery: product.delivery || "通常配送",
+    shopName: product.shop_name || "ショップ名不明",
+    description: product.description || "説明なし",
+    url: product.url || "#",
+  });
 
-        const res = await fetch(`/api/rakuten?keyword=${encodeURIComponent(trendKeyword)}&page=1&affiliateId=${APP_CONFIG.affiliate.rakutenId}`);
-        const data = await res.json();
-        const rawItems = data.Items || data.items;
-        if (rawItems && Array.isArray(rawItems)) {
-          const mapped = rawItems.slice(0, 10).map((itemData: any) => {
-            const item = itemData.Item || itemData;
-            return {
-              id: item.itemCode || String(Math.random()), name: item.itemName || "商品名不明", price: item.itemPrice || 0,
-              image: item.mediumImageUrls?.[0]?.imageUrl?.replace("?_ex=128x128", "") || "", rating: item.reviewAverage || 0,
-              reviews: item.reviewCount || 0, delivery: item.asurakuFlag ? "翌日配達可能" : "通常配送", shopName: item.shopName || "",
-              description: item.itemCaption || "", url: item.itemUrl || "#"
-            };
-          });
-          setTrendingItems(mapped);
-        }
-      } catch (e) {}
-    };
-    fetchTrending();
-  }, [ageGroup, gender]);
-
-  const fetchRakutenItems = async (keyword: string, page: number, reset: boolean, sort: string, limitPrice: number) => {
-    if (reset) setIsLoadingMain(true); else setIsLoadingMore(true);
-    try {
-      let queryKeyword = keyword;
-
-      const abstractKeywords = ["人気", "ファッション", "コスメ", "日用品", APP_CONFIG.defaultSearchKeyword];
-      if ((ageGroup || gender) && abstractKeywords.includes(keyword)) {
-        const ageStr = ageGroup ? ageGroup.replace("以上", "") : "";
-        const genderStr = gender !== "その他" ? gender : "";
-        queryKeyword = `${keyword} ${ageStr} ${genderStr}`.trim();
-      }
-
-      let url = `/api/rakuten?keyword=${encodeURIComponent(queryKeyword)}&page=${page}&sort=${encodeURIComponent(sort)}&affiliateId=${APP_CONFIG.affiliate.rakutenId}`;
-      if (limitPrice > 0) url += `&maxPrice=${limitPrice}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      const rawItems = data.Items || data.items;
-      
-      if (rawItems && Array.isArray(rawItems)) {
-        const fetchedItems = rawItems.map((itemData: any) => {
-          const item = itemData.Item || itemData;
-          return {
-            id: item.itemCode || String(Math.random()), name: item.itemName || "商品名不明", price: item.itemPrice || 0,
-            image: item.mediumImageUrls?.[0]?.imageUrl?.replace("?_ex=128x128", "") || "https://placehold.co/600x600/f3f4f6/a1a1aa?text=No+Image",
-            rating: item.reviewAverage || 0, reviews: item.reviewCount || 0, delivery: item.asurakuFlag ? "翌日配達可能" : "通常配送",
-            shopName: item.shopName || "ショップ名不明", description: item.itemCaption || "説明なし", url: item.itemUrl || "#"
-          };
-        });
-        
-        if (reset) {
-          setItems(fetchedItems);
-          // ▼ もし0件だった場合、上限を外して自動で1秒後に再検索する処理
-          if (fetchedItems.length === 0 && limitPrice > 0) {
-            setIsAutoRetrying(true);
-            setTimeout(() => {
-              setSliderValue(30000);
-              setMaxPrice(0);
-              setIsAutoRetrying(false);
-              fetchRakutenItems(keyword, 1, true, sort, 0);
-            }, 1000);
-          }
-        } else {
-          setItems((prev) => [...prev, ...fetchedItems]);
-        }
-      } else if (reset) {
-        setItems([]);
-        if (limitPrice > 0) {
-          setIsAutoRetrying(true);
-          setTimeout(() => {
-            setSliderValue(30000);
-            setMaxPrice(0);
-            setIsAutoRetrying(false);
-            fetchRakutenItems(keyword, 1, true, sort, 0);
-          }, 1000);
-        }
-      }
-    } catch (error) {} 
-    finally { setIsLoadingMain(false); setIsLoadingMore(false); }
+  const getQueryKeyword = (keyword: string) => {
+    const abstractKeywords = ["人気", "ファッション", "コスメ", "日用品", APP_CONFIG.defaultSearchKeyword];
+    if (!(ageGroup || gender) || !abstractKeywords.includes(keyword)) return keyword;
+    const ageStr = ageGroup ? ageGroup.replace("以上", "") : "";
+    const genderStr = gender !== "その他" ? gender : "";
+    return `${keyword} ${ageStr} ${genderStr}`.trim();
   };
 
-  useEffect(() => { fetchRakutenItems(currentKeyword, 1, true, sortOrder, maxPrice); }, [ageGroup, gender]);
+  const applyLocalSort = (products: Item[], sort: string) => [...products].sort((a, b) => {
+    if (sort === "+itemPrice") return a.price - b.price;
+    if (sort === "-itemPrice") return b.price - a.price;
+    return (b.rating * Math.max(b.reviews, 1)) - (a.rating * Math.max(a.reviews, 1));
+  });
+
+  const fetchProducts = async (keyword: string, page: number, reset: boolean, sort: string, limitPrice: number) => {
+    if (reset) setIsLoadingMain(true); else setIsLoadingMore(true);
+    const pageSize = 30;
+    const queryKeyword = getQueryKeyword(keyword).replace(/[%_,()]/g, " ").trim();
+    
+    try {
+      let query = supabase.from("products").select("id,name,price,image_url,rating,reviews,delivery,shop_name,description,url,category");
+      if (queryKeyword) query = query.or(`name.ilike.%${queryKeyword}%,category.ilike.%${queryKeyword}%`);
+      if (limitPrice > 0) query = query.lte("price", limitPrice);
+
+      if (sort === "+itemPrice") query = query.order("price", { ascending: true });
+      else if (sort === "-itemPrice") query = query.order("price", { ascending: false });
+      else query = query.order("rating", { ascending: false }).order("reviews", { ascending: false });
+
+      const from = (page - 1) * pageSize;
+      const { data, error } = await query.range(from, from + pageSize - 1);
+      if (error) throw error;
+
+      let fetchedItems: Item[] = (data || []).map(mapProduct);
+      
+      // ▼ ここが修正点です！ page === 1 という制限を撤廃しました。
+      // Supabaseのデータが足りないページ（1ページ目でも2ページ目でも）は常に楽天APIから補充します
+      if (fetchedItems.length < pageSize) {
+        // 楽天APIにも現在のページ数(page)を渡すことで、2ページ目以降の補充も可能に
+        const fallback = await fetch(`/api/rakuten?keyword=${encodeURIComponent(queryKeyword || keyword)}&page=${page}${limitPrice > 0 ? `&maxPrice=${limitPrice}` : ""}`);
+        if (fallback.ok) {
+          const body = await fallback.json();
+          const fallbackItems: Item[] = Array.isArray(body.items) ? body.items.map(mapProduct) : [];
+          const existingIds = new Set(fetchedItems.map((item) => item.id));
+          fetchedItems = applyLocalSort([...fetchedItems, ...fallbackItems.filter((item) => !existingIds.has(item.id))], sort).slice(0, pageSize);
+        }
+      }
+
+      setHasMoreProducts(fetchedItems.length === pageSize);
+      
+      if (reset) setItems(fetchedItems);
+      else setItems((previous) => [...previous, ...fetchedItems]);
+
+      if (reset && fetchedItems.length === 0 && limitPrice > 0) {
+        setIsAutoRetrying(true);
+        setTimeout(() => {
+          setSliderValue(30000); setMaxPrice(0); setIsAutoRetrying(false);
+          fetchProducts(keyword, 1, true, sort, 0);
+        }, 1000);
+      }
+    } catch {
+      if (reset) { setItems([]); setHasMoreProducts(false); }
+    } finally {
+      setIsLoadingMain(false); setIsLoadingMore(false);
+    }
+  };
+
+  useEffect(() => {
+    const fetchTrending = async () => {
+      const { data } = await supabase.from("products")
+        .select("id,name,price,image_url,rating,reviews,delivery,shop_name,description,url")
+        .order("reviews", { ascending: false }).order("rating", { ascending: false }).limit(10);
+      if (data) setTrendingItems(data.map(mapProduct));
+    };
+    fetchTrending();
+  }, []);
+
+  useEffect(() => { fetchProducts(currentKeyword, 1, true, sortOrder, maxPrice); }, [ageGroup, gender]);
 
   useEffect(() => {
     const handleScroll = () => {
       if (view !== "SHOP") return;
       if (window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - 300) {
-        if (!isLoadingMain && !isLoadingMore && items.length > 0) {
+        if (!isLoadingMain && !isLoadingMore && hasMoreProducts && items.length > 0) {
           const nextPage = currentPage + 1;
           setCurrentPage(nextPage);
-          fetchRakutenItems(currentKeyword, nextPage, false, sortOrder, maxPrice);
+          fetchProducts(currentKeyword, nextPage, false, sortOrder, maxPrice);
         }
       }
     };
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [isLoadingMain, isLoadingMore, currentPage, currentKeyword, items.length, view, sortOrder, maxPrice]);
+  }, [isLoadingMain, isLoadingMore, hasMoreProducts, currentPage, currentKeyword, items.length, view, sortOrder, maxPrice]);
 
   const scrollToProducts = () => {
     setTimeout(() => {
@@ -314,7 +326,7 @@ export default function KattaTsumoriApp() {
   const handleQuickCategory = (keyword: string) => {
     setCurrentKeyword(keyword); setSearchInput(""); setCurrentPage(1); setIsBottomCategoryOpen(false);
     scrollToProducts();
-    fetchRakutenItems(keyword, 1, true, sortOrder, maxPrice);
+    fetchProducts(keyword, 1, true, sortOrder, maxPrice);
   };
 
   const handleSearch = (e?: React.KeyboardEvent<HTMLInputElement>) => {
@@ -323,13 +335,13 @@ export default function KattaTsumoriApp() {
         setCurrentKeyword(searchInput); 
         setCurrentPage(1); 
         scrollToProducts();
-        fetchRakutenItems(searchInput, 1, true, sortOrder, maxPrice);
+        fetchProducts(searchInput, 1, true, sortOrder, maxPrice);
       }
     }
   };
 
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newSort = e.target.value; setSortOrder(newSort); setCurrentPage(1); fetchRakutenItems(currentKeyword, 1, true, newSort, maxPrice);
+    const newSort = e.target.value; setSortOrder(newSort); setCurrentPage(1); fetchProducts(currentKeyword, 1, true, newSort, maxPrice);
   };
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => setSliderValue(Number(e.target.value));
@@ -337,7 +349,7 @@ export default function KattaTsumoriApp() {
   const handleSliderRelease = () => {
     const newMaxPrice = sliderValue >= 30000 ? 0 : sliderValue;
     if (maxPrice !== newMaxPrice) {
-      setMaxPrice(newMaxPrice); setCurrentPage(1); fetchRakutenItems(currentKeyword, 1, true, sortOrder, newMaxPrice);
+      setMaxPrice(newMaxPrice); setCurrentPage(1); fetchProducts(currentKeyword, 1, true, sortOrder, newMaxPrice);
     }
   };
 
@@ -648,7 +660,7 @@ export default function KattaTsumoriApp() {
                       ) : (
                         <>
                           <p>商品が見つかりませんでした😢</p>
-                          <button onClick={() => { setSliderValue(30000); setMaxPrice(0); fetchRakutenItems(currentKeyword, 1, true, sortOrder, 0); }} className="mt-4 px-4 py-2 bg-red-50 text-red-600 rounded-full text-sm font-bold shadow-sm">上限を外して再検索</button>
+                          <button onClick={() => { setSliderValue(30000); setMaxPrice(0); fetchProducts(currentKeyword, 1, true, sortOrder, 0); }} className="mt-4 px-4 py-2 bg-red-50 text-red-600 rounded-full text-sm font-bold shadow-sm">上限を外して再検索</button>
                         </>
                       )}
                     </div>

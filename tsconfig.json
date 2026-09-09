@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-, "app/api/rakuten/route.js"  ],
+, "app/api/rakuten/route.ts"  ],
   "exclude": ["node_modules"]
 }
