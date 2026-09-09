@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
-export const runtime = "edge"; // Cloudflare用
+export const runtime = "edge"; 
 
 const clean = (value: string | undefined) => (value || "").replace(/["'\r\n\s]/g, "").trim();
 
@@ -11,6 +11,23 @@ function createServerSupabase() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
   if (!url || !key) return null;
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+// デバッグ用の「エラー商品」を生成する関数
+function createErrorItem(id: string, msg: string, desc: string) {
+  return {
+    id,
+    name: msg,
+    price: 9999999,
+    image_url: "https://placehold.co/600x600/dc2626/ffffff?text=Error",
+    rating: 1,
+    reviews: 999,
+    delivery: "システム通知",
+    shop_name: "デバッグ機能",
+    description: desc,
+    url: "#",
+    category: "エラー"
+  };
 }
 
 export async function GET(request: Request) {
@@ -23,53 +40,64 @@ export async function GET(request: Request) {
 
   const supabase = createServerSupabase();
 
-  // ==========================================
-  // 【ステップ1】Supabaseから読み込む（本番のメイン処理）
-  // ==========================================
-  if (supabase) {
-    try {
-      let query = supabase.from("products").select("*");
+  // エラー1：環境変数が読み込めていない
+  if (!supabase) {
+    return NextResponse.json({ 
+      items: [createErrorItem("err1", "🚨 環境変数が空です", "Cloudflareで環境変数を設定したあと、再デプロイ（Rebuild）されていません。変数が空のためSupabaseに繋がっていません。")] 
+    });
+  }
 
-      if (keyword && keyword !== "人気") {
-        query = query.or(`name.ilike.%${keyword}%,category.ilike.%${keyword}%`);
-      }
+  try {
+    let query = supabase.from("products").select("*");
 
-      if (maxPrice > 0) {
-        query = query.lte("price", maxPrice);
-      }
-
-      if (sort === "+itemprice") {
-        query = query.order("price", { ascending: true });
-      } else if (sort === "-itemprice") {
-        query = query.order("price", { ascending: false });
-      } else {
-        query = query.order("rating", { ascending: false }).order("reviews", { ascending: false });
-      }
-
-      const limit = 30;
-      const from = (page - 1) * limit;
-      const to = from + limit - 1;
-      const { data, error } = await query.range(from, to);
-
-      // Supabaseにデータが存在すれば返す
-      if (!error && data && data.length > 0) {
-        return NextResponse.json({ items: data }, { headers: { "Cache-Control": "no-store" } });
-      }
-    } catch (e) {
-      console.error("Supabase query error:", e);
+    if (keyword && keyword !== "人気") {
+      query = query.or(`name.ilike.%${keyword}%,category.ilike.%${keyword}%`);
     }
+
+    if (maxPrice > 0) {
+      query = query.lte("price", maxPrice);
+    }
+
+    if (sort === "+itemprice") {
+      query = query.order("price", { ascending: true });
+    } else if (sort === "-itemprice") {
+      query = query.order("price", { ascending: false });
+    } else {
+      query = query.order("rating", { ascending: false }).order("reviews", { ascending: false });
+    }
+
+    const limit = 30;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    const { data, error } = await query.range(from, to);
+
+    // エラー2：RLSなどSupabase側のエラー
+    if (error) {
+      return NextResponse.json({ 
+        items: [createErrorItem("err2", "🚨 Supabaseアクセス拒否", `データベースには繋がりましたが、読み込みが拒否されました。RLSが無効化されているか確認してください。詳細: ${error.message}`)] 
+      });
+    }
+
+    // データが正常に取れた場合
+    if (data && data.length > 0) {
+      return NextResponse.json({ items: data }, { headers: { "Cache-Control": "no-store" } });
+    }
+  } catch (e: any) {
+    return NextResponse.json({ items: [createErrorItem("err3", "🚨 Supabase通信エラー", e.message)] });
   }
 
   // ==========================================
-  // 【ステップ2】楽天APIへのフォールバック
-  // ※ Cloudflare(本番)ではIP制限で弾かれるため、エラーを出さずに空の配列を返します。
+  // Supabaseのデータが0件だった場合のフォールバック
   // ==========================================
   const appId = clean(process.env.RAKUTEN_APP_ID);
   const accessKey = clean(process.env.RAKUTEN_ACCESS_KEY);
   const affiliateId = clean(process.env.RAKUTEN_AFFILIATE_ID);
-
+  
+  // エラー4：DBが0件で、楽天APIキーも無い
   if (!appId || !accessKey) {
-    return NextResponse.json({ items: [] }); // エラーにせず空を返す
+    return NextResponse.json({ 
+      items: [createErrorItem("err4", "🚨 DB0件 ＆ 楽天キーなし", "Supabaseに該当商品が0件で、楽天APIキーも設定されていないため商品が取得できません。")] 
+    });
   }
 
   let rakutenSort = "standard";
@@ -80,7 +108,6 @@ export async function GET(request: Request) {
     format: "json", keyword, applicationId: appId, accessKey: accessKey,
     page: String(page), hits: "30", imageFlag: "1", sort: rakutenSort
   });
-  
   if (affiliateId) params.set("affiliateId", affiliateId);
   if (maxPrice > 0) params.set("maxPrice", String(maxPrice));
 
@@ -94,10 +121,11 @@ export async function GET(request: Request) {
     
     const payload = await response.json();
     
-    // 【重要】IP制限などで弾かれた場合はエラー画面にせず、安全に空リストを返す
+    // エラー5：楽天APIがCloudflareのIPをブロック
     if (!response.ok || !payload.Items) {
-      console.warn("楽天APIへのアクセスが制限されました (CloudflareのIP等)。Supabaseのデータのみを表示します。");
-      return NextResponse.json({ items: [] }); 
+      return NextResponse.json({ 
+        items: [createErrorItem("err5", "🚨 楽天API ブロック", "Supabaseに検索した商品が0件です。代わりに楽天APIから取得しようとしましたが、Cloudflareからのアクセスと判定されブロックされました。ローカル環境で「sync.mjs」を実行してDBに商品を蓄積してください。")] 
+      });
     }
 
     const items = payload.Items.map((itemData: any) => {
@@ -111,13 +139,15 @@ export async function GET(request: Request) {
       };
     });
 
-    if (supabase && items.length > 0) {
-      await supabase.from("products").upsert(items, { onConflict: "id" });
+    const supabaseForUpsert = createServerSupabase();
+    if (supabaseForUpsert && items.length > 0) {
+      await supabaseForUpsert.from("products").upsert(items, { onConflict: "id" });
     }
 
     return NextResponse.json({ items }, { headers: { "Cache-Control": "no-store" } });
   } catch (err: any) {
-    // 通信エラー時もサイトを壊さない
-    return NextResponse.json({ items: [] });
+    return NextResponse.json({ 
+      items: [createErrorItem("err6", "🚨 通信エラー", err.message)] 
+    });
   }
 }
