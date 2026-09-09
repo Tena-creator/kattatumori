@@ -30,19 +30,6 @@ function generateUUID() {
 
 const ICONS = { User, Cat, Dog, Ghost, Smile, Crown, Rocket };
 
-type ProductRow = {
-  id: string;
-  name?: string | null;
-  price?: number | string | null;
-  image_url?: string | null;
-  rating?: number | string | null;
-  reviews?: number | string | null;
-  delivery?: string | null;
-  shop_name?: string | null;
-  description?: string | null;
-  url?: string | null;
-};
-
 export default function KattaTsumoriApp() {
   const [view, setView] = useState<ViewState>("SHOP");
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
@@ -83,7 +70,6 @@ export default function KattaTsumoriApp() {
   const [currentBanner, setCurrentBanner] = useState(0);
   
   const [isCheckoutFailed, setIsCheckoutFailed] = useState(false);
-  const [isAutoRetrying, setIsAutoRetrying] = useState(false);
 
   const [cmsPages, setCmsPages] = useState<Record<string, { title: string; content: string }>>({});
 
@@ -164,24 +150,6 @@ export default function KattaTsumoriApp() {
   };
 
   useEffect(() => {
-    const fetchCmsPages = async () => {
-      const domain = process.env.NEXT_PUBLIC_MICROCMS_SERVICE_DOMAIN;
-      const apiKey = process.env.NEXT_PUBLIC_MICROCMS_API_KEY;
-      if (!domain || !apiKey) return;
-      try {
-        const res = await fetch(`https://${domain}.microcms.io/api/v1/pages?limit=10`, { headers: { "X-MICROCMS-API-KEY": apiKey } });
-        const data = await res.json();
-        if (data.contents) {
-          const pagesMap: Record<string, { title: string; content: string }> = {};
-          data.contents.forEach((item: any) => { pagesMap[item.slug] = { title: item.title, content: item.content }; });
-          setCmsPages(pagesMap);
-        }
-      } catch (e) {}
-    };
-    fetchCmsPages();
-  }, []);
-
-  useEffect(() => {
     const savedHistory = localStorage.getItem("kattatsumori_orderHistory");
     const savedLifetimeAmt = localStorage.getItem("kattatsumori_lifetimeAmt");
     const savedLifetimeOrd = localStorage.getItem("kattatsumori_lifetimeOrd");
@@ -207,11 +175,10 @@ export default function KattaTsumoriApp() {
     return () => clearInterval(timer);
   }, [view, activeBanners.length]);
 
-  const mapProduct = (product: ProductRow): Item => ({
+  const mapProduct = (product: any): Item => ({
     id: product.id,
     name: product.name || "商品名不明",
     price: Number(product.price || 0),
-    // ここで image_url を image に変換しています
     image: product.image_url || "https://placehold.co/600x600/f3f4f6/a1a1aa?text=No+Image",
     rating: Number(product.rating || 0),
     reviews: Number(product.reviews || 0),
@@ -230,33 +197,44 @@ export default function KattaTsumoriApp() {
   };
 
   // ==========================================
-  // 【修正】フェッチしたデータをmapProductに通して画像URLを正しくセットする
+  // 【超重要修正】API（500エラーの元凶）を捨て、Supabaseから直接取得する
   // ==========================================
   const fetchProducts = async (keyword: string, page: number, reset: boolean, sort: string, limitPrice: number) => {
     if (reset) setIsLoadingMain(true); else setIsLoadingMore(true);
+    const pageSize = 30;
     const queryKeyword = getQueryKeyword(keyword).replace(/[%_,()]/g, " ").trim();
     
     try {
-      const url = `/api/rakuten?keyword=${encodeURIComponent(queryKeyword || keyword)}&page=${page}&sort=${sort}${limitPrice > 0 ? `&maxPrice=${limitPrice}` : ""}`;
-      const response = await fetch(url);
-      const data = await response.json();
+      let query = supabase.from("products").select("*");
+
+      if (queryKeyword && queryKeyword !== "人気") {
+        query = query.or(`name.ilike.%${queryKeyword}%,category.ilike.%${queryKeyword}%`);
+      }
       
-      // ★ ここが抜けていました。data.items を mapProduct に通して image を生成します。
-      const fetchedItems: Item[] = Array.isArray(data.items) ? data.items.map(mapProduct) : [];
-      
-      setHasMoreProducts(fetchedItems.length >= 30);
+      if (limitPrice > 0) {
+        query = query.lte("price", limitPrice);
+      }
+
+      if (sort === "+itemPrice") query = query.order("price", { ascending: true });
+      else if (sort === "-itemPrice") query = query.order("price", { ascending: false });
+      else query = query.order("rating", { ascending: false }).order("reviews", { ascending: false });
+
+      const from = (page - 1) * pageSize;
+      const { data, error } = await query.range(from, from + pageSize - 1);
+
+      if (error) {
+        console.error("Supabase Database Error:", error);
+        throw error;
+      }
+
+      let fetchedItems: Item[] = (data || []).map(mapProduct);
+      setHasMoreProducts(fetchedItems.length === pageSize);
       
       if (reset) setItems(fetchedItems);
       else setItems((previous) => [...previous, ...fetchedItems]);
 
-      if (reset && fetchedItems.length === 0 && limitPrice > 0) {
-        setIsAutoRetrying(true);
-        setTimeout(() => {
-          setSliderValue(30000); setMaxPrice(0); setIsAutoRetrying(false);
-          fetchProducts(keyword, 1, true, sort, 0);
-        }, 1000);
-      }
-    } catch {
+    } catch (e) {
+      console.error("Fetch Products Failed", e);
       if (reset) { setItems([]); setHasMoreProducts(false); }
     } finally {
       setIsLoadingMain(false); setIsLoadingMore(false);
@@ -266,16 +244,10 @@ export default function KattaTsumoriApp() {
   useEffect(() => {
     const fetchTrending = async () => {
       const { data } = await supabase.from("products")
-        .select("id,name,price,image_url,rating,reviews,delivery,shop_name,description,url")
+        .select("*")
         .order("reviews", { ascending: false }).order("rating", { ascending: false }).limit(10);
       if (data) {
-        const mapped = data.map(product => ({
-          id: product.id, name: product.name, price: Number(product.price || 0),
-          image: product.image_url, rating: Number(product.rating || 0),
-          reviews: Number(product.reviews || 0), delivery: product.delivery,
-          shopName: product.shop_name, description: product.description, url: product.url
-        })) as Item[];
-        setTrendingItems(mapped);
+        setTrendingItems(data.map(mapProduct));
       }
     };
     fetchTrending();
@@ -636,18 +608,8 @@ export default function KattaTsumoriApp() {
                 <>
                   {items.length === 0 ? (
                     <div className="text-center py-20 text-gray-500 animate-in fade-in">
-                      {isAutoRetrying ? (
-                        <>
-                          <Loader2 className="w-10 h-10 text-red-600 animate-spin mx-auto mb-4" />
-                          <p className="font-bold text-gray-700">条件に合う商品が見つかりません。</p>
-                          <p className="text-xs mt-2 text-gray-500">予算上限を外して自動再検索しています...</p>
-                        </>
-                      ) : (
-                        <>
-                          <p>商品が見つかりませんでした😢</p>
-                          <button onClick={() => { setSliderValue(30000); setMaxPrice(0); fetchProducts(currentKeyword, 1, true, sortOrder, 0); }} className="mt-4 px-4 py-2 bg-red-50 text-red-600 rounded-full text-sm font-bold shadow-sm">上限を外して再検索</button>
-                        </>
-                      )}
+                      <p>商品が見つかりませんでした😢</p>
+                      <button onClick={() => { setSliderValue(30000); setMaxPrice(0); fetchProducts(currentKeyword, 1, true, sortOrder, 0); }} className="mt-4 px-4 py-2 bg-red-50 text-red-600 rounded-full text-sm font-bold shadow-sm">上限を外して再検索</button>
                     </div>
                   ) : (
                     <div className="space-y-4">
