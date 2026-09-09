@@ -149,6 +149,31 @@ export default function KattaTsumoriApp() {
     }
   };
 
+  // ========================================================
+  // 【修正点】microCMSの鍵もハードコードして読み込みを確定させる
+  // ========================================================
+  useEffect(() => {
+    const fetchCmsPages = async () => {
+      // ⚠️ ここにご自身のmicroCMSの情報を貼り付けてください
+      const domain = "dopamine-rush"; 
+      const apiKey = "2I0UjWaGzefmy2355esPBlZnNwVH5tWzVOEl";
+
+      if (!domain || !apiKey || domain === "YOUR_MICROCMS_DOMAIN") return;
+      try {
+        const res = await fetch(`https://${domain}.microcms.io/api/v1/pages?limit=10`, { headers: { "X-MICROCMS-API-KEY": apiKey } });
+        const data = await res.json();
+        if (data.contents) {
+          const pagesMap: Record<string, { title: string; content: string }> = {};
+          data.contents.forEach((item: any) => { pagesMap[item.slug] = { title: item.title, content: item.content }; });
+          setCmsPages(pagesMap);
+        }
+      } catch (e) {
+        console.error("microCMS Error:", e);
+      }
+    };
+    fetchCmsPages();
+  }, []);
+
   useEffect(() => {
     const savedHistory = localStorage.getItem("kattatsumori_orderHistory");
     const savedLifetimeAmt = localStorage.getItem("kattatsumori_lifetimeAmt");
@@ -196,9 +221,6 @@ export default function KattaTsumoriApp() {
     return `${keyword} ${ageStr} ${genderStr}`.trim();
   };
 
-  // ==========================================
-  // 【超重要修正】API（500エラーの元凶）を捨て、Supabaseから直接取得する
-  // ==========================================
   const fetchProducts = async (keyword: string, page: number, reset: boolean, sort: string, limitPrice: number) => {
     if (reset) setIsLoadingMain(true); else setIsLoadingMore(true);
     const pageSize = 30;
